@@ -5,7 +5,7 @@
 
 // dopuni po potrebi
 typedef enum FLAGS {
-	MESSAGE,
+	DATA,
 	REGISTRATION,
 	REGISTRATION_SUCCESSFUL,
 	REGISTRATION_FAILED,

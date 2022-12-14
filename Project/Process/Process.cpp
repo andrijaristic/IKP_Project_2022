@@ -19,6 +19,7 @@
 #define SECONDARY_REPLICATOR_PORT "27001"
 #define THREAD_NUMBER 1
 #define MAX_BUFFER_LENGTH 512
+#define MAX_PROCESS_ID_LENGTH 16
 
 bool InitializeWindowsSockets();
 DWORD WINAPI ConnectToReplicator(LPVOID param);
@@ -36,11 +37,11 @@ int main()
     DWORD replicatorConnectionThreadId;
     HANDLE replicatorConnection;
 
-    short processId = 0;
+    char processId[MAX_PROCESS_ID_LENGTH];
     do {
         printf("Enter ProcessID: ");
-        scanf_s("%hd", &processId);
-    } while (processId <= 0);
+        gets_s(processId, MAX_PROCESS_ID_LENGTH);
+    } while (atoi(processId) <= 0);
 
     short replicatorPort = 0;
     printf("\nChoose Replicator to connect to\n---------------------------------------------\n");
@@ -51,7 +52,7 @@ int main()
         scanf_s("%hd", &replicatorPort);
     } while (replicatorPort <= 0 || replicatorPort >= 3);
 
-    printf("\nClient ProcessID: %d\nConnected Replicator Port: %d\n\n", processId, replicatorPort);
+    printf("\nClient ProcessID: %s\nConnected Replicator Port: %d\n\n", processId, replicatorPort == 1 ? 27000 : 27001);
 
     replicatorPort = replicatorPort == 1 ? htons(atoi(MAIN_REPLICATOR_PORT)) : htons(atoi(SECONDARY_REPLICATOR_PORT));
 
@@ -73,7 +74,7 @@ int main()
     replicatorData.serverAddress = &serverAddress;
     replicatorData.FinishSignal = &FinishSignal;
     replicatorData.replicatorConnected = &replicatorConnected;
-    replicatorData.processId = processId;
+    strcpy_s(replicatorData.processId, processId);
 
     // Actual connection logic. Make it so it's unblocking and constantly trying to connect to the replicator.
     replicatorConnection = CreateThread(NULL, 0, &ConnectToReplicator, (LPVOID)&replicatorData, 0, &replicatorConnectionThreadId);
@@ -117,7 +118,8 @@ DWORD WINAPI ConnectToReplicator(LPVOID param) {
     SOCKET* replicatorSocket = replicatorData.replicatorSocket;
     bool* replicatorConnected = replicatorData.replicatorConnected;
     sockaddr_in* serverAddress = replicatorData.serverAddress;
-    short processId = replicatorData.processId;
+    char processId[MAX_PROCESS_ID_LENGTH];
+    strcpy_s(processId, replicatorData.processId);
     int iResult;
 
     int onConnectMessage = 0;
@@ -162,7 +164,7 @@ DWORD WINAPI ConnectToReplicator(LPVOID param) {
 
         if (!onConnectMessage) {
             struct MESSAGE data;
-            data.processId = processId;
+            strcpy_s(data.processId, processId);
             data.flag = DATA;
             strcpy_s(data.message, "");
 
