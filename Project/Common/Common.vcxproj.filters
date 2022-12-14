@@ -18,5 +18,8 @@
     <ClInclude Include="Message.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="HashMap.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
