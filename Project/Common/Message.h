@@ -1,6 +1,7 @@
 #pragma once
 
 #define MAX_BUFFER_LENGTH 512
+#define MAX_PROCESS_ID_LENGTH 16
 
 // dopuni po potrebi
 typedef enum FLAGS {
@@ -13,7 +14,7 @@ typedef enum FLAGS {
 
 typedef struct MESSAGE
 {
-	short processId;
+	char processId[MAX_PROCESS_ID_LENGTH];
 	char message[MAX_BUFFER_LENGTH];
 	FLAGS flag;
 }MESSAGE;
