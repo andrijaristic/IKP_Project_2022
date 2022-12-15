@@ -10,10 +10,12 @@
 
 #include "Structures.h"
 #include "Functions.h"
+#include "../Common//Message.h"
 #include "../Common/HashMap.h"
 
 #pragma comment(lib, "Ws2_32.lib")
 
+#define DEFAULT_BUFFER_LENGTH 1024
 #define MAIN_REPLICATOR_PORT "28000"
 #define MAIN_REPLICATOR_PROCESS_PORT "27000"
 #define SECONDARY_REPLICATOR_PROCESS_PORT "27001"
@@ -167,6 +169,7 @@ DWORD WINAPI ConnectToMainReplicator(LPVOID param)
                 continue;
             }
             printf("Connection to the replicator broken\n");
+            shutdown(*replicatorSocket, SD_BOTH);
             closesocket(*replicatorSocket);
             *replicatorSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
             if (*replicatorSocket == INVALID_SOCKET)
@@ -222,6 +225,7 @@ DWORD WINAPI AcceptReplicatorConnection(LPVOID param)
                 continue;
             }
             printf("Connection to the replicator broken\n");
+            shutdown(*replicatorSocket, SD_BOTH);
             closesocket(*replicatorSocket);
             *replicatorSocket = INVALID_SOCKET;
             *replicatorConnected = false;
@@ -279,7 +283,66 @@ DWORD WINAPI AcceptProcessConnections(LPVOID param)
             return 1;
         }
         printf("Process connected, waiting for registration\n");
-        // TO DO
+
+        bool socketReadyToReceive = true;
+        while (!SocketIsReadyForReading(&acceptedSocket))
+        {
+            if (IsSocketBroken(acceptedSocket))
+            {
+                shutdown(acceptedSocket, SD_BOTH);
+                closesocket(acceptedSocket);
+                socketReadyToReceive = false;
+                break;
+            }
+            Sleep(50);
+        }
+
+        // socket was broken and closed
+        if (!socketReadyToReceive)
+        {
+            continue;
+        }
+
+        char recvBuffer[DEFAULT_BUFFER_LENGTH];
+        iResult = recv(acceptedSocket, recvBuffer, DEFAULT_BUFFER_LENGTH, 0);
+        if (iResult == 0) 
+        {
+            printf("Connection with process closed\n");
+            shutdown(acceptedSocket, SD_BOTH);
+            closesocket(acceptedSocket);
+        }
+        else if (iResult == SOCKET_ERROR) 
+        {
+            //recv failed
+            printf("recv failed with error %d\n", WSAGetLastError());
+            shutdown(acceptedSocket, SD_BOTH);
+            closesocket(acceptedSocket);
+        }
+        else {
+            // message received
+            MESSAGE* message = (MESSAGE*)recvBuffer;
+            if (message->flag != REGISTRATION)
+            {
+                printf("Process registration failed\n");
+                RespondToProcessRegistration(&acceptedSocket, false);
+                continue;
+            }
+
+            char processId[MAX_PROCESS_ID_LENGTH];
+            strcpy_s(processId, message->processId);
+            
+            bool processExists = processSockets->DoesKeyExist(processId);
+
+            if (processExists)
+            {
+                RespondToProcessRegistration(&acceptedSocket, false);
+                continue;
+            }
+
+            printf("Process registration successful, processId: %s\n", processId);
+            RespondToProcessRegistration(&acceptedSocket, true);
+            processSockets->Insert(processId, acceptedSocket);
+        }
     }
 
     printf("AcceptProcessConnections thread is shutting down\n");

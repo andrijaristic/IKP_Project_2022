@@ -1,5 +1,6 @@
 #include "Functions.h"
 #include "stdio.h"
+#include "../Common//Message.h"
 
 bool SocketIsReadyForReading(SOCKET* socket)
 {
@@ -14,6 +15,32 @@ bool SocketIsReadyForReading(SOCKET* socket)
     int iResult;
 
     iResult = select(0, &set, NULL, NULL, &timeVal);
+    if (iResult == SOCKET_ERROR)
+    {
+        fprintf(stderr, "select failed with error: %ld\n", WSAGetLastError());
+        return false;
+    }
+    if (iResult == 0)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool SocketIsReadyForWriting(SOCKET* socket)
+{
+    FD_SET set;
+    timeval timeVal;
+
+    FD_ZERO(&set);
+    FD_SET(*socket, &set);
+    timeVal.tv_sec = 0;
+    timeVal.tv_usec = 0;
+
+    int iResult;
+
+    iResult = select(0, NULL, &set, NULL, &timeVal);
     if (iResult == SOCKET_ERROR)
     {
         fprintf(stderr, "select failed with error: %ld\n", WSAGetLastError());
@@ -98,4 +125,32 @@ bool InitializeListenSocket(SOCKET* listenSocket, const char* port)
     }
 
     return true;
+}
+
+void RespondToProcessRegistration(SOCKET* acceptedSocket, bool registrationSuccessful)
+{
+    while (!SocketIsReadyForWriting(acceptedSocket))
+    {
+        if (IsSocketBroken(*acceptedSocket))
+        {
+            shutdown(*acceptedSocket, SD_BOTH);
+            closesocket(*acceptedSocket);
+            break;
+        }
+        Sleep(50);
+    }
+    
+    int iResult;
+    MESSAGE data;
+    data.flag = registrationSuccessful ? REGISTRATION_SUCCESSFUL : REGISTRATION_FAILED;
+
+    iResult = send(*acceptedSocket, (char*)&data, sizeof(data), 0);
+    
+    if (registrationSuccessful && (iResult != SOCKET_ERROR))
+    {
+        return;
+    }
+
+    shutdown(*acceptedSocket, SD_BOTH);
+    closesocket(*acceptedSocket);
 }
