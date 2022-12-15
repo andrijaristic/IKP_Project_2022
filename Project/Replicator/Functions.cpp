@@ -174,7 +174,7 @@ bool SendDataToReplicator(SOCKET* replicatorSocket, MESSAGE* data)
         Sleep(50);
     }
 
-    int iResult = send(*replicatorSocket, (char*)&data, sizeof(data), 0);
+    int iResult = send(*replicatorSocket, (char*)data, sizeof(*data), 0);
 
     return iResult != SOCKET_ERROR;
 }

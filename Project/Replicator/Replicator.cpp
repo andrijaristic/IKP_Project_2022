@@ -16,11 +16,10 @@
 
 #pragma comment(lib, "Ws2_32.lib")
 
-#define DEFAULT_BUFFER_LENGTH 1024
 #define MAIN_REPLICATOR_PORT "28000"
 #define MAIN_REPLICATOR_PROCESS_PORT "27000"
 #define SECONDARY_REPLICATOR_PROCESS_PORT "27001"
-#define THREAD_NUMBER 3
+#define THREAD_NUMBER 4
 #define SAFE_DELETE_HANDLE(a)  if(a){CloseHandle(a);}
 
 bool InitializeWindowsSockets();
@@ -28,6 +27,7 @@ DWORD WINAPI ConnectToMainReplicator(LPVOID param);
 DWORD WINAPI AcceptReplicatorConnection(LPVOID param);
 DWORD WINAPI AcceptProcessConnections(LPVOID param);
 DWORD WINAPI SendMessageToReplicator(LPVOID param);
+DWORD WINAPI ReceiveMessageFromReplicator(LPVOID param);
 
 int main()
 {
@@ -129,6 +129,40 @@ int main()
 
     replicatorSender = CreateThread(NULL, 0, &SendMessageToReplicator, (LPVOID)&replicatorSenderData, 0, &replicatorSenderThreadId);
 
+    HANDLE EmptyRecvQueue = CreateSemaphore(0, 0, 1, NULL);
+    LinkedList<MESSAGE> recvQueue;
+    DWORD replicatorReceiverThreadId;
+    HANDLE replicatorReceiver;
+
+    REPLICATOR_RECEIVER_DATA replicatorReceiverData;
+    replicatorReceiverData.replicatorSocket = &replicatorSocket;
+    replicatorReceiverData.replicatorConnected = &replicatorConnected;
+    replicatorReceiverData.recvQueue = &recvQueue;
+    replicatorReceiverData.EmptyRecvQueue = &EmptyRecvQueue;
+    replicatorReceiverData.FinishSignal = &FinishSignal;
+
+    replicatorReceiver = CreateThread(NULL, 0, &ReceiveMessageFromReplicator, (LPVOID)&replicatorReceiverData, 0, &replicatorReceiverThreadId);
+
+    printf("Press enter to test send\n");
+    getchar();
+
+    MESSAGE m1;
+    strcpy_s(m1.message, "Prva poruka");
+    m1.flag = DATA;
+    MESSAGE m2;
+    strcpy_s(m2.message, "Druga poruka");
+    m2.flag = REGISTRATION;
+    MESSAGE m3;
+    strcpy_s(m3.message, "Treca poruka");
+    m3.flag = DATA;
+
+    sendQueue.PushBack(m1);
+    ReleaseSemaphore(EmptySendQueue, 1, NULL);
+    sendQueue.PushBack(m2);
+    ReleaseSemaphore(EmptySendQueue, 1, NULL);
+    sendQueue.PushBack(m3);
+    ReleaseSemaphore(EmptySendQueue, 1, NULL);
+
     printf("Press enter to terminate all threads\n");
     getchar();
 
@@ -146,10 +180,18 @@ int main()
     {
         WaitForSingleObject(replicatorSender, INFINITE);
     }
+    if (replicatorReceiver)
+    {
+        WaitForSingleObject(replicatorReceiver, INFINITE);
+    }
 
     SAFE_DELETE_HANDLE(replicatorConnection);
     SAFE_DELETE_HANDLE(processConnection);
+    SAFE_DELETE_HANDLE(replicatorSender);
+    SAFE_DELETE_HANDLE(replicatorReceiver);
     SAFE_DELETE_HANDLE(FinishSignal);
+    SAFE_DELETE_HANDLE(EmptySendQueue);
+    SAFE_DELETE_HANDLE(EmptyRecvQueue);
 
     WSACleanup();
     printf("Everything cleaned, press enter to exit\n");
@@ -321,8 +363,8 @@ DWORD WINAPI AcceptProcessConnections(LPVOID param)
             continue;
         }
 
-        char recvBuffer[DEFAULT_BUFFER_LENGTH];
-        iResult = recv(acceptedSocket, recvBuffer, DEFAULT_BUFFER_LENGTH, 0);
+        char recvBuffer[sizeof(MESSAGE)];
+        iResult = recv(acceptedSocket, recvBuffer, sizeof(MESSAGE), 0);
         if (iResult == 0) 
         {
             printf("Connection with process closed\n");
@@ -336,7 +378,8 @@ DWORD WINAPI AcceptProcessConnections(LPVOID param)
             shutdown(acceptedSocket, SD_BOTH);
             closesocket(acceptedSocket);
         }
-        else {
+        else 
+        {
             // message received
             MESSAGE* message = (MESSAGE*)recvBuffer;
             if (message->flag != REGISTRATION)
@@ -412,5 +455,65 @@ DWORD WINAPI SendMessageToReplicator(LPVOID param)
     }
 
     printf("SendMessageToReplicator thread is shutting down\n");
+    return 0;
+}
+
+DWORD WINAPI ReceiveMessageFromReplicator(LPVOID param)
+{
+    REPLICATOR_RECEIVER_DATA replicatorRecvData = *((REPLICATOR_RECEIVER_DATA*)param);
+    SOCKET* replicatorSocket = replicatorRecvData.replicatorSocket;
+    bool* replicatorConnected = replicatorRecvData.replicatorConnected;
+    LinkedList<MESSAGE>* recvQueue = replicatorRecvData.recvQueue;
+    HANDLE* EmptyRecvQueue = replicatorRecvData.EmptyRecvQueue;
+    HANDLE* FinishSignal = replicatorRecvData.FinishSignal;
+
+    int iResult;
+    char recvBuffer[sizeof(MESSAGE)];
+
+    while (WaitForSingleObject(*FinishSignal, 0) != WAIT_OBJECT_0)
+    {
+        if (!*replicatorConnected)
+        {
+            Sleep(1000);
+            continue;
+        }
+
+        if (!SocketIsReadyForReading(replicatorSocket))
+        {
+            Sleep(1000);
+            continue;
+        }
+
+        memset(recvBuffer, 0, sizeof(recvBuffer));
+        iResult = recv(*replicatorSocket, recvBuffer, sizeof(MESSAGE), 0);
+        if (iResult == 0)
+        {
+            printf("Connection with replicator closed\n");
+            shutdown(*replicatorSocket, SD_BOTH);
+            closesocket(*replicatorSocket);
+            *replicatorConnected = false;
+        }
+        else if (iResult == SOCKET_ERROR)
+        {
+            //recv failed
+            printf("recv failed with error %d\n", WSAGetLastError());
+            shutdown(*replicatorSocket, SD_BOTH);
+            closesocket(*replicatorSocket);
+            *replicatorConnected = false;
+        }
+        else 
+        {
+            // message received
+            MESSAGE* message = (MESSAGE*)recvBuffer;
+            if (message->flag != DATA)
+            {
+                continue;
+            }
+            recvQueue->PushBack(*message);
+            ReleaseSemaphore(*EmptyRecvQueue, 1, NULL);
+        }
+    }
+
+    printf("ReceiveMessageFromReplicator thread is shutting down\n");
     return 0;
 }

@@ -31,3 +31,11 @@ typedef struct REPLICATOR_SENDER_DATA {
 	HANDLE* EmptySendQueue;
 	HANDLE* FinishSignal;
 }REPLICATOR_SENDER_DATA;
+
+typedef struct REPLICATOR_RECEIVER_DATA {
+	SOCKET* replicatorSocket;
+	bool* replicatorConnected;
+	LinkedList<MESSAGE>* recvQueue;
+	HANDLE* EmptyRecvQueue;
+	HANDLE* FinishSignal;
+}REPLICATOR_RECEIVER_DATA;
