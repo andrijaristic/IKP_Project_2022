@@ -550,7 +550,6 @@ DWORD WINAPI SendMessageToProcess(LPVOID param)
             Sleep(1000);
             continue;
         }
-
         char processId[MAX_PROCESS_ID_LENGTH];
         strcpy_s(processId, data.processId);
 
@@ -559,6 +558,7 @@ DWORD WINAPI SendMessageToProcess(LPVOID param)
         {
             recvQueue->PushBack(data);
             ReleaseSemaphore(*EmptyRecvQueue, 1, NULL);
+            Sleep(100);
             continue;
         }
 
@@ -581,6 +581,7 @@ DWORD WINAPI SendMessageToProcess(LPVOID param)
             continue;
         }
         ReleaseSemaphore(*EmptyRecvQueue, 1, NULL);
+        Sleep(100);
     }
 
     printf("SendMessageToProcess thread is shutting down\n");

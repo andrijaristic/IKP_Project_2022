@@ -165,7 +165,7 @@ DWORD WINAPI SendToReplicator(LPVOID param) {
             }
         }
     }
-    
+
     printf("\nSendToReplicator Thread is shutting down.\n");
     return 0;
 }
@@ -178,6 +178,7 @@ DWORD WINAPI ReceiveFromReplicator(LPVOID param) {
     strcpy_s(processId, replicatorReceiveData.processId);
 
     int iResult;
+    char recvBuf[sizeof(MESSAGE)];
     while (WaitForSingleObject(*FinishSignal, 0) != WAIT_OBJECT_0) {
         bool socketReadyToReceive = true;
         while (!IsSocketReadyForReading(replicatorSocket))
@@ -194,8 +195,8 @@ DWORD WINAPI ReceiveFromReplicator(LPVOID param) {
 
         if (!socketReadyToReceive) { continue; }
 
-        char recvBuf[DEFAULT_BUFFER_LENGTH];
-        iResult = recv(*replicatorSocket, recvBuf, DEFAULT_BUFFER_LENGTH, 0);
+        memset(recvBuf, 0, sizeof(recvBuf));
+        iResult = recv(*replicatorSocket, recvBuf, sizeof(MESSAGE), 0);
         if (iResult == 0) {
             printf("Connection with process closed.\n");
             shutdown(*replicatorSocket, SD_BOTH);
@@ -245,7 +246,7 @@ bool ConnectToReplicator(LPVOID param) {
             printf("Connection to the Replicator has been broken.\n");
             closesocket(*replicatorSocket);
 
-            *replicatorSocket = socket(AF_INET, SOCK_STREAM,IPPROTO_TCP);
+            *replicatorSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
             if (*replicatorSocket == INVALID_SOCKET) {
                 printf("socket failed with error: %ld\n", WSAGetLastError());
                 WSACleanup();
