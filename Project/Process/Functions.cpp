@@ -33,7 +33,7 @@ bool IsSocketReadyForWriting(SOCKET* socket)
 
     if (iResult == SOCKET_ERROR)
     {
-        fprintf(stderr, "select failed with error: %ld\n", WSAGetLastError());
+        fprintf(stderr, "WRITE select failed with error: %ld\n", WSAGetLastError());
         return false;
     }
 
@@ -59,7 +59,7 @@ bool IsSocketReadyForReading(SOCKET* socket) {
     iResult = select(0, &set, NULL, NULL, &timeVal);
     if (iResult == SOCKET_ERROR)
     {
-        fprintf(stderr, "select failed with error: %ld\n", WSAGetLastError());
+        fprintf(stderr, "READ select failed with error: %ld\n", WSAGetLastError());
         return false;
     }
     if (iResult == 0)

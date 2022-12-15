@@ -98,9 +98,13 @@ int main()
     strcpy_s(replicatorSendData.processId, processId);
 
     senderThread = CreateThread(NULL, 0, &SendToReplicator, (LPVOID)&replicatorSendData, 0, &senderThreadId);
-    //receiverThread = CreateThread(NULL, 0, &ReceiveFromReplicator, (LPVOID)"Receive", 0, &receiverThreadId);
 
-    // During connection establishment, enable posting messages which will be stored in an internal buffer or list.
+    REPLICATOR_RECEIVE_DATA replicatorReceiveData;
+    replicatorReceiveData.FinishSignal = &FinishSignal;
+    replicatorReceiveData.replicatorSocket = &replicatorSocket;
+    strcpy_s(replicatorReceiveData.processId, processId);
+
+    receiverThread = CreateThread(NULL, 0, &ReceiveFromReplicator, (LPVOID)&replicatorReceiveData, 0, &receiverThreadId);
 
     while (!shutdownSignal) {
         continue;
@@ -110,10 +114,13 @@ int main()
     if (senderThread) {
         WaitForSingleObject(senderThread, INFINITE);
     }
+    if (receiverThread) {
+        WaitForSingleObject(receiverThread, INFINITE);
+    }
 
     SAFE_DELETE_HANDLE(FinishSignal);
     SAFE_DELETE_HANDLE(senderThread);
-    //SAFE_DELETE_HANDLE(receiverThread);
+    SAFE_DELETE_HANDLE(receiverThread);
 
     WSACleanup();
     printf("\nCleanup finished.\nPress Enter to exit.\n");
@@ -164,6 +171,45 @@ DWORD WINAPI SendToReplicator(LPVOID param) {
 }
 
 DWORD WINAPI ReceiveFromReplicator(LPVOID param) {
+    REPLICATOR_RECEIVE_DATA replicatorReceiveData = *((REPLICATOR_RECEIVE_DATA*)param);
+    HANDLE* FinishSignal = replicatorReceiveData.FinishSignal;
+    SOCKET* replicatorSocket = replicatorReceiveData.replicatorSocket;
+    char processId[MAX_PROCESS_ID_LENGTH];
+    strcpy_s(processId, replicatorReceiveData.processId);
+
+    int iResult;
+    while (WaitForSingleObject(*FinishSignal, 0) != WAIT_OBJECT_0) {
+        bool socketReadyToReceive = true;
+        while (!IsSocketReadyForReading(replicatorSocket))
+        {
+            if (IsSocketBroken(*replicatorSocket))
+            {
+                shutdown(*replicatorSocket, SD_BOTH);
+                closesocket(*replicatorSocket);
+                socketReadyToReceive = false;
+                break;
+            }
+            Sleep(50);
+        }
+
+        if (!socketReadyToReceive) { continue; }
+
+        char recvBuf[DEFAULT_BUFFER_LENGTH];
+        iResult = recv(*replicatorSocket, recvBuf, DEFAULT_BUFFER_LENGTH, 0);
+        if (iResult == 0) {
+            printf("Connection with process closed.\n");
+            shutdown(*replicatorSocket, SD_BOTH);
+            closesocket(*replicatorSocket);
+        }
+        else if (iResult == SOCKET_ERROR) { // recv failure
+            closesocket(*replicatorSocket);
+            WSACleanup();
+        }
+        else { // recv success
+            MESSAGE* message = (MESSAGE*)recvBuf;
+            printf("\n%s\n", message->message);
+        }
+    }
     return 0;
 }
 
