@@ -1,5 +1,6 @@
 #include "Functions.h"
 #include "stdio.h"
+#include "../Common/Message.h"
 
 bool IsSocketBroken(SOCKET socket)
 {
@@ -15,7 +16,7 @@ bool IsSocketBroken(SOCKET socket)
     return false;
 }
 
-bool isSocketReadyForWriting(SOCKET* socket)
+bool IsSocketReadyForWriting(SOCKET* socket)
 {
     FD_SET set;
     timeval timeVal;
@@ -44,7 +45,7 @@ bool isSocketReadyForWriting(SOCKET* socket)
     return true;
 }
 
-bool isSocketReadyForReading(SOCKET* socket) {
+bool IsSocketReadyForReading(SOCKET* socket) {
     FD_SET set;
     timeval timeVal;
 
@@ -67,4 +68,15 @@ bool isSocketReadyForReading(SOCKET* socket) {
     }
 
     return true;
+}
+
+bool SendDataToReplicator(SOCKET* socket, MESSAGE* data) {
+    while (!IsSocketReadyForWriting(socket)) {
+        if (IsSocketBroken(*socket)) { return false; }
+        Sleep(100);
+    }
+
+    int iResult = send(*socket, (char*)data, sizeof(*data), 0);
+
+    return iResult != SOCKET_ERROR;
 }

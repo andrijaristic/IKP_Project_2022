@@ -24,7 +24,9 @@
 #define MAX_PROCESS_ID_LENGTH 16
 
 bool InitializeWindowsSockets();
-DWORD WINAPI ConnectToReplicator(LPVOID param);
+bool ConnectToReplicator(LPVOID param);
+DWORD WINAPI SendToReplicator(LPVOID param);
+DWORD WINAPI ReceiveFromReplicator(LPVOID param);
 
 int main()
 {
@@ -36,8 +38,6 @@ int main()
     SOCKET replicatorSocket;
     bool replicatorConnected = false;
     HANDLE FinishSignal = CreateSemaphore(0, 0, THREAD_NUMBER, NULL);
-    DWORD replicatorConnectionThreadId;
-    HANDLE replicatorConnection;
 
     char processId[MAX_PROCESS_ID_LENGTH];
     do {
@@ -53,7 +53,7 @@ int main()
         printf("Pick option: ");
         scanf_s("%hd", &replicatorPort);
     } while (replicatorPort <= 0 || replicatorPort >= 3);
-
+    getchar(); // Flushing leftover newline.
     printf("\nClient ProcessID: %s\nConnected Replicator Port: %d\n\n", processId, replicatorPort == 1 ? 27000 : 27001);
 
     replicatorPort = replicatorPort == 1 ? htons(atoi(MAIN_REPLICATOR_PORT)) : htons(atoi(SECONDARY_REPLICATOR_PORT));
@@ -78,27 +78,92 @@ int main()
     replicatorData.replicatorConnected = &replicatorConnected;
     strcpy_s(replicatorData.processId, processId);
 
-    // Actual connection logic. Make it so it's unblocking and constantly trying to connect to the replicator.
-    replicatorConnection = CreateThread(NULL, 0, &ConnectToReplicator, (LPVOID)&replicatorData, 0, &replicatorConnectionThreadId);
+    // Trying to connect to replicator.
+    if (!ConnectToReplicator((LPVOID)&replicatorData)) {
+        ReleaseSemaphore(FinishSignal, THREAD_NUMBER, NULL);
+        SAFE_DELETE_HANDLE(FinishSignal);
+
+        WSACleanup();
+        return 1;
+    }
+
+    bool shutdownSignal = false;
+    DWORD senderThreadId, receiverThreadId;
+    HANDLE senderThread, receiverThread;
+
+    REPLICATOR_SEND_DATA replicatorSendData;
+    replicatorSendData.FinishSignal = &FinishSignal;
+    replicatorSendData.replicatorSocket = &replicatorSocket;
+    replicatorSendData.shutdownSignal = &shutdownSignal;
+    strcpy_s(replicatorSendData.processId, processId);
+
+    senderThread = CreateThread(NULL, 0, &SendToReplicator, (LPVOID)&replicatorSendData, 0, &senderThreadId);
+    //receiverThread = CreateThread(NULL, 0, &ReceiveFromReplicator, (LPVOID)"Receive", 0, &receiverThreadId);
 
     // During connection establishment, enable posting messages which will be stored in an internal buffer or list.
 
-    printf("Press Enter to terminate all threads.\n");
-    getchar();
-    getchar();
-
-    ReleaseSemaphore(FinishSignal, THREAD_NUMBER, NULL);
-    if (replicatorConnected) {
-        WaitForSingleObject(replicatorConnection, INFINITE);
+    while (!shutdownSignal) {
+        continue;
     }
 
-    SAFE_DELETE_HANDLE(replicatorConnection);
+    ReleaseSemaphore(FinishSignal, THREAD_NUMBER, NULL);
+    if (senderThread) {
+        WaitForSingleObject(senderThread, INFINITE);
+    }
+
     SAFE_DELETE_HANDLE(FinishSignal);
+    SAFE_DELETE_HANDLE(senderThread);
+    //SAFE_DELETE_HANDLE(receiverThread);
 
     WSACleanup();
-    printf("Cleanup finished.\nPress Enter to exit.\n");
+    printf("\nCleanup finished.\nPress Enter to exit.\n");
     getchar();
 
+    return 0;
+}
+
+DWORD WINAPI SendToReplicator(LPVOID param) {
+    REPLICATOR_SEND_DATA replicatorSendData = *((REPLICATOR_SEND_DATA*)param);
+    HANDLE* FinishSignal = replicatorSendData.FinishSignal;
+    SOCKET* replicatorSocket = replicatorSendData.replicatorSocket;
+    bool* shutdownSignal = replicatorSendData.shutdownSignal;
+    char processId[MAX_PROCESS_ID_LENGTH];
+    strcpy_s(processId, replicatorSendData.processId);
+
+    int iResult;
+    char message[DEFAULT_BUFFER_LENGTH];
+    while (WaitForSingleObject(*FinishSignal, 0) != WAIT_OBJECT_0) {
+        if (!*shutdownSignal) {
+            printf("Enter message (exit to shutdown): ");
+            gets_s(message, DEFAULT_BUFFER_LENGTH);
+
+            if (!strcmp(message, "exit")) {
+                shutdown(*replicatorSocket, SD_BOTH);
+                closesocket(*replicatorSocket);
+
+                *shutdownSignal = true;
+            }
+
+            if (!*shutdownSignal) {
+                MESSAGE data;
+                strcpy_s(data.processId, processId);
+                strcpy_s(data.message, message);
+                data.flag = DATA;
+
+                if (!SendDataToReplicator(replicatorSocket, &data)) {
+                    printf("Failed to send data to replicator.");
+                    shutdown(*replicatorSocket, SD_BOTH);
+                    closesocket(*replicatorSocket);
+                }
+            }
+        }
+    }
+    
+    printf("\nSendToReplicator Thread is shutting down.\n");
+    return 0;
+}
+
+DWORD WINAPI ReceiveFromReplicator(LPVOID param) {
     return 0;
 }
 
@@ -114,7 +179,7 @@ bool InitializeWindowsSockets()
     return true;
 }
 
-DWORD WINAPI ConnectToReplicator(LPVOID param) {
+bool ConnectToReplicator(LPVOID param) {
     REPLICATOR_DATA replicatorData = *((REPLICATOR_DATA*)param);
     HANDLE* FinishSignal = replicatorData.FinishSignal;
     SOCKET* replicatorSocket = replicatorData.replicatorSocket;
@@ -122,12 +187,9 @@ DWORD WINAPI ConnectToReplicator(LPVOID param) {
     sockaddr_in* serverAddress = replicatorData.serverAddress;
     char processId[MAX_PROCESS_ID_LENGTH];
     strcpy_s(processId, replicatorData.processId);
+
     int iResult;
-
-    bool onConnectMessage = false;
-
-    // Waiting for Semaphore to release Thread connected to Replicator for Graceful Shutdown reasons.
-    while (WaitForSingleObject(*FinishSignal, 0) != WAIT_OBJECT_0) {
+    while (true) {
         if (*replicatorConnected) {
             if (!IsSocketBroken(*replicatorSocket)) {
                 Sleep(2000);
@@ -141,7 +203,7 @@ DWORD WINAPI ConnectToReplicator(LPVOID param) {
             if (*replicatorSocket == INVALID_SOCKET) {
                 printf("socket failed with error: %ld\n", WSAGetLastError());
                 WSACleanup();
-                return 1;
+                return false;
             }
 
             *replicatorConnected = false;
@@ -159,79 +221,73 @@ DWORD WINAPI ConnectToReplicator(LPVOID param) {
         iResult = ioctlsocket(*replicatorSocket, FIONBIO, &nonBlockingMode);
         if (iResult == SOCKET_ERROR) {
             printf("ioctlsocket failed with error: %ld\n", WSAGetLastError());
-            return 1;
+            return false;
         }
 
         *replicatorConnected = true;
 
-        if (!onConnectMessage) {
-            struct MESSAGE data;
-            strcpy_s(data.processId, processId);
-            data.flag = REGISTRATION;
-            strcpy_s(data.message, "");
+        struct MESSAGE data;
+        strcpy_s(data.processId, processId);
+        data.flag = REGISTRATION;
+        strcpy_s(data.message, "");
 
-            while (!isSocketReadyForWriting(replicatorSocket)) {
-                printf("Cannot send message to replicator.\n");
-                Sleep(1000);
-            }
+        while (!IsSocketReadyForWriting(replicatorSocket)) {
+            printf("Cannot send message to replicator.\n");
+            Sleep(1000);
+        }
 
-            iResult = send(*replicatorSocket, (char*)&data, sizeof(data), 0);
-            if (iResult == SOCKET_ERROR) {
-                closesocket(*replicatorSocket);
-                WSACleanup();
-                return 1;
-            }
+        iResult = send(*replicatorSocket, (char*)&data, sizeof(data), 0);
+        if (iResult == SOCKET_ERROR) {
+            closesocket(*replicatorSocket);
+            WSACleanup();
+            return false;
+        }
 
-            printf("\nRegistration message sent.\n");
-            onConnectMessage = true;
+        printf("\nRegistration message sent.\n");
 
-            // recv() for message with flag REGISTRATION_SUCCESSFUL or REGISTRATION_SUCCESSFUL.
-            // If REGISTRATION_SUCCESSFUL, feel free to send messages.
-            // If REGISTRATION_SUCCESSFUL, restart socket and try again. 
-            // // (closesocket(*replicatorSocket) => if(*replicatorConnected){} will restart the socket)
-
-            bool socketReadyToReceive = true;
-            while (!isSocketReadyForReading(replicatorSocket))
+        bool socketReadyToReceive = true;
+        while (!IsSocketReadyForReading(replicatorSocket))
+        {
+            if (IsSocketBroken(*replicatorSocket))
             {
-                if (IsSocketBroken(*replicatorSocket))
-                {
-                    shutdown(*replicatorSocket, SD_BOTH);
-                    closesocket(*replicatorSocket);
-                    socketReadyToReceive = false;
-                    break;
-                }
-                Sleep(50);
-            }
-
-            // Socket was broken and connection was closed.
-            if (!socketReadyToReceive) { continue; }
-
-            char recvBuf[DEFAULT_BUFFER_LENGTH];
-            iResult = recv(*replicatorSocket, recvBuf, DEFAULT_BUFFER_LENGTH, 0);
-            if (iResult == 0) {
-                printf("Connection with process closed.\n");
                 shutdown(*replicatorSocket, SD_BOTH);
                 closesocket(*replicatorSocket);
-            } else if (iResult == SOCKET_ERROR) { // recv failure
+                socketReadyToReceive = false;
+                break;
+            }
+            Sleep(50);
+        }
+
+        // Socket was broken and connection was closed.
+        if (!socketReadyToReceive) { continue; }
+
+        char recvBuf[DEFAULT_BUFFER_LENGTH];
+        iResult = recv(*replicatorSocket, recvBuf, DEFAULT_BUFFER_LENGTH, 0);
+        if (iResult == 0) {
+            printf("Connection with process closed.\n");
+            shutdown(*replicatorSocket, SD_BOTH);
+            closesocket(*replicatorSocket);
+        }
+        else if (iResult == SOCKET_ERROR) { // recv failure
+            closesocket(*replicatorSocket);
+            WSACleanup();
+            return false;
+        }
+        else { // recv success
+            MESSAGE* message = (MESSAGE*)recvBuf;
+            if (message->flag == REGISTRATION_FAILED) {
+                // Close socket
+                shutdown(*replicatorSocket, SD_BOTH);
                 closesocket(*replicatorSocket);
                 WSACleanup();
-                return 1;
-            }
-            else { // recv success
-                MESSAGE* message = (MESSAGE*)recvBuf;
-                if (message->flag == REGISTRATION_FAILED) {
-                    // Close socket
-                    shutdown(*replicatorSocket, SD_BOTH);
-                    closesocket(*replicatorSocket);
-                    WSACleanup();
 
-                    printf("\nRegistration failed. Press Enter to exit.\n");
-                    getchar();
+                printf("\nRegistration failed. Press Enter to exit.\n");
+                getchar();
 
-                    return 1;
-                }
+                return false;
             }
-            printf("Registration successful.\n\n");
         }
+        printf("Registration successful.\n\n");
+        return true;
     }
 }
