@@ -1,5 +1,6 @@
 #pragma once
 #include <ws2tcpip.h>
+#include "../Common//Message.h"
 
 /// <summary>
 /// Calls select on a socket and returns true if it is ready for reading operations, or false if it is not
@@ -39,3 +40,11 @@ bool InitializeListenSocket(SOCKET* listenSocket, const char* port);
 /// <param name="registrationSuccessful"></param>
 /// <returns></returns>
 void RespondToProcessRegistration(SOCKET* acceptedSocket, bool registrationSuccessful);
+
+/// <summary>
+/// Attemps to send data to the given socket, if it succeeds return true, if it doesn't succeed return false
+/// </summary>
+/// <param name="replicatorSocket"></param>
+/// <param name="data"></param>
+/// <returns></returns>
+bool SendDataToReplicator(SOCKET* replicatorSocket, MESSAGE* data);

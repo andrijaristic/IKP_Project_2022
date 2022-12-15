@@ -129,17 +129,25 @@ bool InitializeListenSocket(SOCKET* listenSocket, const char* port)
 
 void RespondToProcessRegistration(SOCKET* acceptedSocket, bool registrationSuccessful)
 {
+    bool socketClosed = false;
+
     while (!SocketIsReadyForWriting(acceptedSocket))
     {
         if (IsSocketBroken(*acceptedSocket))
         {
             shutdown(*acceptedSocket, SD_BOTH);
             closesocket(*acceptedSocket);
+            socketClosed = true;
             break;
         }
         Sleep(50);
     }
     
+    if (socketClosed)
+    {
+        return;
+    }
+
     int iResult;
     MESSAGE data;
     data.flag = registrationSuccessful ? REGISTRATION_SUCCESSFUL : REGISTRATION_FAILED;
@@ -153,4 +161,20 @@ void RespondToProcessRegistration(SOCKET* acceptedSocket, bool registrationSucce
 
     shutdown(*acceptedSocket, SD_BOTH);
     closesocket(*acceptedSocket);
+}
+
+bool SendDataToReplicator(SOCKET* replicatorSocket, MESSAGE* data)
+{
+    while (!SocketIsReadyForWriting(replicatorSocket))
+    {
+        if (IsSocketBroken(*replicatorSocket))
+        {
+            return false;
+        }
+        Sleep(50);
+    }
+
+    int iResult = send(*replicatorSocket, (char*)&data, sizeof(data), 0);
+
+    return iResult != SOCKET_ERROR;
 }

@@ -12,6 +12,7 @@
 #include "Functions.h"
 #include "../Common//Message.h"
 #include "../Common/HashMap.h"
+#include "../Common//LinkedList.h"
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -19,13 +20,14 @@
 #define MAIN_REPLICATOR_PORT "28000"
 #define MAIN_REPLICATOR_PROCESS_PORT "27000"
 #define SECONDARY_REPLICATOR_PROCESS_PORT "27001"
-#define THREAD_NUMBER 2
+#define THREAD_NUMBER 3
 #define SAFE_DELETE_HANDLE(a)  if(a){CloseHandle(a);}
 
 bool InitializeWindowsSockets();
 DWORD WINAPI ConnectToMainReplicator(LPVOID param);
 DWORD WINAPI AcceptReplicatorConnection(LPVOID param);
 DWORD WINAPI AcceptProcessConnections(LPVOID param);
+DWORD WINAPI SendMessageToReplicator(LPVOID param);
 
 int main()
 {
@@ -113,6 +115,20 @@ int main()
 
     printf("Listening to processes.\n");
 
+    HANDLE EmptySendQueue = CreateSemaphore(0, 0, 1, NULL);
+    LinkedList<MESSAGE> sendQueue;
+    DWORD replicatorSenderThreadId;
+    HANDLE replicatorSender;
+
+    REPLICATOR_SENDER_DATA replicatorSenderData;
+    replicatorSenderData.replicatorSocket = &replicatorSocket;
+    replicatorSenderData.replicatorConnected = &replicatorConnected;
+    replicatorSenderData.sendQueue = &sendQueue;
+    replicatorSenderData.EmptySendQueue = &EmptySendQueue;
+    replicatorSenderData.FinishSignal = &FinishSignal;
+
+    replicatorSender = CreateThread(NULL, 0, &SendMessageToReplicator, (LPVOID)&replicatorSenderData, 0, &replicatorSenderThreadId);
+
     printf("Press enter to terminate all threads\n");
     getchar();
 
@@ -125,6 +141,10 @@ int main()
     if (processConnection)
     {
         WaitForSingleObject(processConnection, INFINITE);
+    }
+    if (replicatorSender)
+    {
+        WaitForSingleObject(replicatorSender, INFINITE);
     }
 
     SAFE_DELETE_HANDLE(replicatorConnection);
@@ -212,8 +232,6 @@ DWORD WINAPI AcceptReplicatorConnection(LPVOID param)
     SOCKET* replicatorSocket = mainReplicatorData.replicatorSocket;
     bool* replicatorConnected = mainReplicatorData.replicatorConnected;
     HANDLE* FinishSignal = mainReplicatorData.FinishSignal;
-
-    int iResult;
 
     while (WaitForSingleObject(*FinishSignal, 0) != WAIT_OBJECT_0)
     {
@@ -323,7 +341,6 @@ DWORD WINAPI AcceptProcessConnections(LPVOID param)
             MESSAGE* message = (MESSAGE*)recvBuffer;
             if (message->flag != REGISTRATION)
             {
-                printf("Process registration failed\n");
                 RespondToProcessRegistration(&acceptedSocket, false);
                 continue;
             }
@@ -346,5 +363,54 @@ DWORD WINAPI AcceptProcessConnections(LPVOID param)
     }
 
     printf("AcceptProcessConnections thread is shutting down\n");
+    return 0;
+}
+
+DWORD WINAPI SendMessageToReplicator(LPVOID param)
+{
+    REPLICATOR_SENDER_DATA replicatorSenderData = *((REPLICATOR_SENDER_DATA*)param);
+    SOCKET* replicatorSocket = replicatorSenderData.replicatorSocket;
+    bool* replicatorConnected = replicatorSenderData.replicatorConnected;
+    LinkedList<MESSAGE>* sendQueue = replicatorSenderData.sendQueue;
+    HANDLE* EmptySendQueue = replicatorSenderData.EmptySendQueue;
+    HANDLE* FinishSignal = replicatorSenderData.FinishSignal;
+
+    const int semaphoreNum = 2;
+    HANDLE semaphores[semaphoreNum] = { *FinishSignal, *EmptySendQueue };
+
+    while (WaitForMultipleObjects(semaphoreNum, semaphores, FALSE, INFINITE) == WAIT_OBJECT_0 + 1)
+    {
+        if (!*replicatorConnected)
+        {
+            ReleaseSemaphore(*EmptySendQueue, 1, NULL);
+            Sleep(1000);
+            continue;
+        }
+
+        MESSAGE data;
+        if (!sendQueue->PopFront(&data))
+        {
+            printf("Could not get the message from the send queue\n");
+            Sleep(1000);
+            continue;
+        }
+
+        if (!SendDataToReplicator(replicatorSocket, &data))
+        {
+            printf("Failed to send message to other replicator\n");
+            shutdown(*replicatorSocket, SD_BOTH);
+            closesocket(*replicatorSocket);
+            *replicatorConnected = false;
+            sendQueue->PushFront(data);
+        }
+
+        if (sendQueue->isEmpty())
+        {
+            continue;
+        }
+        ReleaseSemaphore(*EmptySendQueue, 1, NULL);
+    }
+
+    printf("SendMessageToReplicator thread is shutting down\n");
     return 0;
 }

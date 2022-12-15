@@ -1,6 +1,8 @@
 #pragma once
 #include <ws2tcpip.h>
+#include "../Common//Message.h"
 #include "../Common//HashMap.h"
+#include "../Common//LinkedList.h"
 
 typedef struct SECONDARY_REPLICATOR_DATA {
 	SOCKET* replicatorSocket;
@@ -21,3 +23,11 @@ typedef struct REPLICATOR_PROCESS_DATA {
 	HashMap<SOCKET>* processSockets;
 	HANDLE* FinishSignal;
 }REPLICATOR_PROCESS_DATA;
+
+typedef struct REPLICATOR_SENDER_DATA {
+	SOCKET* replicatorSocket;
+	bool* replicatorConnected;
+	LinkedList<MESSAGE>* sendQueue;
+	HANDLE* EmptySendQueue;
+	HANDLE* FinishSignal;
+}REPLICATOR_SENDER_DATA;
