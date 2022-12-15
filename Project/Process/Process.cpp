@@ -165,7 +165,7 @@ DWORD WINAPI ConnectToReplicator(LPVOID param) {
         if (!onConnectMessage) {
             struct MESSAGE data;
             strcpy_s(data.processId, processId);
-            data.flag = DATA;
+            data.flag = REGISTRATION;
             strcpy_s(data.message, "");
 
             while (!isSocketReady(replicatorSocket)) {
@@ -180,6 +180,7 @@ DWORD WINAPI ConnectToReplicator(LPVOID param) {
                 return 1;
             }
 
+            printf("Registration message sent.\n");
             onConnectMessage = 1;
         }
     }
