@@ -456,6 +456,7 @@ DWORD WINAPI SendMessageToReplicator(LPVOID param)
             continue;
         }
         ReleaseSemaphore(*EmptySendQueue, 1, NULL);
+        Sleep(100);
     }
 
     printf("SendMessageToReplicator thread is shutting down\n");
@@ -524,6 +525,7 @@ DWORD WINAPI ReceiveMessageFromReplicator(LPVOID param)
             recvQueue->PushBack(*message);
             ReleaseSemaphore(*EmptyRecvQueue, 1, NULL);
         }
+        Sleep(100);
     }
 
     printf("ReceiveMessageFromReplicator thread is shutting down\n");
@@ -578,6 +580,7 @@ DWORD WINAPI SendMessageToProcess(LPVOID param)
 
         if (recvQueue->Count() == 0)
         {
+            Sleep(100);
             continue;
         }
         ReleaseSemaphore(*EmptyRecvQueue, 1, NULL);
@@ -671,6 +674,7 @@ DWORD WINAPI ReceiveMessageFromProcess(LPVOID param)
         }
         free(keys);
         free(sockets);
+        Sleep(100);
     }
 
     printf("ReceiveMessageFromProcess thread is shutting down\n");
