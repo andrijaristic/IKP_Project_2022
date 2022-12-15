@@ -70,17 +70,6 @@ int main()
     }
     else
     {
-        replicatorSocket = socket(AF_INET,
-            SOCK_STREAM,
-            IPPROTO_TCP);
-
-        if (replicatorSocket == INVALID_SOCKET)
-        {
-            printf("socket failed with error: %ld\n", WSAGetLastError());
-            WSACleanup();
-            return 1;
-        }
-
         sockaddr_in serverAddress;
         serverAddress.sin_family = AF_INET;
         serverAddress.sin_addr.s_addr = inet_addr("127.0.0.1");
@@ -142,26 +131,6 @@ int main()
     replicatorReceiverData.FinishSignal = &FinishSignal;
 
     replicatorReceiver = CreateThread(NULL, 0, &ReceiveMessageFromReplicator, (LPVOID)&replicatorReceiverData, 0, &replicatorReceiverThreadId);
-
-    printf("Press enter to test send\n");
-    getchar();
-
-    MESSAGE m1;
-    strcpy_s(m1.message, "Prva poruka");
-    m1.flag = DATA;
-    MESSAGE m2;
-    strcpy_s(m2.message, "Druga poruka");
-    m2.flag = REGISTRATION;
-    MESSAGE m3;
-    strcpy_s(m3.message, "Treca poruka");
-    m3.flag = DATA;
-
-    sendQueue.PushBack(m1);
-    ReleaseSemaphore(EmptySendQueue, 1, NULL);
-    sendQueue.PushBack(m2);
-    ReleaseSemaphore(EmptySendQueue, 1, NULL);
-    sendQueue.PushBack(m3);
-    ReleaseSemaphore(EmptySendQueue, 1, NULL);
 
     printf("Press enter to terminate all threads\n");
     getchar();
@@ -233,16 +202,17 @@ DWORD WINAPI ConnectToMainReplicator(LPVOID param)
             printf("Connection to the replicator broken\n");
             shutdown(*replicatorSocket, SD_BOTH);
             closesocket(*replicatorSocket);
-            *replicatorSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-            if (*replicatorSocket == INVALID_SOCKET)
-            {
-                printf("socket failed with error: %ld\n", WSAGetLastError());
-                WSACleanup();
-                return 1;
-            }
+            *replicatorSocket = INVALID_SOCKET;
             *replicatorConnected = false;
         }
 
+        *replicatorSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (*replicatorSocket == INVALID_SOCKET)
+        {
+            printf("socket failed with error: %ld\n", WSAGetLastError());
+            WSACleanup();
+            return 1;
+        }
         iResult = connect(*replicatorSocket, (SOCKADDR*)serverAddress, sizeof(*serverAddress));
         if (iResult == SOCKET_ERROR)
         {
@@ -477,13 +447,21 @@ DWORD WINAPI ReceiveMessageFromReplicator(LPVOID param)
             Sleep(1000);
             continue;
         }
-
+        
+        if (IsSocketBroken(*replicatorSocket))
+        {
+            shutdown(*replicatorSocket, SD_BOTH);
+            closesocket(*replicatorSocket);
+            *replicatorConnected = false;
+            continue;
+        }
+        
         if (!SocketIsReadyForReading(replicatorSocket))
         {
             Sleep(1000);
             continue;
         }
-
+        
         memset(recvBuffer, 0, sizeof(recvBuffer));
         iResult = recv(*replicatorSocket, recvBuffer, sizeof(MESSAGE), 0);
         if (iResult == 0)
