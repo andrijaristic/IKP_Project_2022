@@ -163,18 +163,18 @@ void RespondToProcessRegistration(SOCKET* acceptedSocket, bool registrationSucce
     closesocket(*acceptedSocket);
 }
 
-bool SendDataToReplicator(SOCKET* replicatorSocket, MESSAGE* data)
+bool SendDataToSocket(SOCKET* socket, MESSAGE* data)
 {
-    while (!SocketIsReadyForWriting(replicatorSocket))
+    while (!SocketIsReadyForWriting(socket))
     {
-        if (IsSocketBroken(*replicatorSocket))
+        if (IsSocketBroken(*socket))
         {
             return false;
         }
         Sleep(50);
     }
 
-    int iResult = send(*replicatorSocket, (char*)data, sizeof(*data), 0);
+    int iResult = send(*socket, (char*)data, sizeof(*data), 0);
 
     return iResult != SOCKET_ERROR;
 }

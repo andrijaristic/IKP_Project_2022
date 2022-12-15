@@ -47,4 +47,4 @@ void RespondToProcessRegistration(SOCKET* acceptedSocket, bool registrationSucce
 /// <param name="replicatorSocket"></param>
 /// <param name="data"></param>
 /// <returns></returns>
-bool SendDataToReplicator(SOCKET* replicatorSocket, MESSAGE* data);
+bool SendDataToSocket(SOCKET* socket, MESSAGE* data);

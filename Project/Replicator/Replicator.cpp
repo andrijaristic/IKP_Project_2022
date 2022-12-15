@@ -19,7 +19,7 @@
 #define MAIN_REPLICATOR_PORT "28000"
 #define MAIN_REPLICATOR_PROCESS_PORT "27000"
 #define SECONDARY_REPLICATOR_PROCESS_PORT "27001"
-#define THREAD_NUMBER 4
+#define THREAD_NUMBER 5
 #define SAFE_DELETE_HANDLE(a)  if(a){CloseHandle(a);}
 
 bool InitializeWindowsSockets();
@@ -28,6 +28,7 @@ DWORD WINAPI AcceptReplicatorConnection(LPVOID param);
 DWORD WINAPI AcceptProcessConnections(LPVOID param);
 DWORD WINAPI SendMessageToReplicator(LPVOID param);
 DWORD WINAPI ReceiveMessageFromReplicator(LPVOID param);
+DWORD WINAPI SendMessageToProcess(LPVOID param);
 
 int main()
 {
@@ -132,6 +133,17 @@ int main()
 
     replicatorReceiver = CreateThread(NULL, 0, &ReceiveMessageFromReplicator, (LPVOID)&replicatorReceiverData, 0, &replicatorReceiverThreadId);
 
+    DWORD processSenderThreadId;
+    HANDLE processSender;
+
+    PROCESS_SENDER_DATA processSenderData;
+    processSenderData.processSockets = &processSockets;
+    processSenderData.recvQueue = &recvQueue;
+    processSenderData.EmptyRecvQueue = &EmptyRecvQueue;
+    processSenderData.FinishSignal = &FinishSignal;
+
+    processSender = CreateThread(NULL, 0, &SendMessageToProcess, (LPVOID)&processSenderData, 0, &processSenderThreadId);
+
     printf("Press enter to terminate all threads\n");
     getchar();
 
@@ -153,11 +165,16 @@ int main()
     {
         WaitForSingleObject(replicatorReceiver, INFINITE);
     }
+    if (processSender)
+    {
+        WaitForSingleObject(processSender, INFINITE);
+    }
 
     SAFE_DELETE_HANDLE(replicatorConnection);
     SAFE_DELETE_HANDLE(processConnection);
     SAFE_DELETE_HANDLE(replicatorSender);
     SAFE_DELETE_HANDLE(replicatorReceiver);
+    SAFE_DELETE_HANDLE(processSender);
     SAFE_DELETE_HANDLE(FinishSignal);
     SAFE_DELETE_HANDLE(EmptySendQueue);
     SAFE_DELETE_HANDLE(EmptyRecvQueue);
@@ -408,7 +425,7 @@ DWORD WINAPI SendMessageToReplicator(LPVOID param)
             continue;
         }
 
-        if (!SendDataToReplicator(replicatorSocket, &data))
+        if (!SendDataToSocket(replicatorSocket, &data))
         {
             printf("Failed to send message to other replicator\n");
             shutdown(*replicatorSocket, SD_BOTH);
@@ -493,5 +510,62 @@ DWORD WINAPI ReceiveMessageFromReplicator(LPVOID param)
     }
 
     printf("ReceiveMessageFromReplicator thread is shutting down\n");
+    return 0;
+}
+
+DWORD WINAPI SendMessageToProcess(LPVOID param)
+{
+    PROCESS_SENDER_DATA processSendData = *((PROCESS_SENDER_DATA*)param);
+    HashMap<SOCKET>* processSockets = processSendData.processSockets;
+    LinkedList<MESSAGE>* recvQueue = processSendData.recvQueue;
+    HANDLE* EmptyRecvQueue = processSendData.EmptyRecvQueue;
+    HANDLE* FinishSignal = processSendData.FinishSignal;
+
+    const int semaphoreNum = 2;
+    HANDLE semaphores[semaphoreNum] = { *FinishSignal, *EmptyRecvQueue };
+
+    while (WaitForMultipleObjects(semaphoreNum, semaphores, FALSE, INFINITE) == WAIT_OBJECT_0 + 1)
+    {
+        MESSAGE data;
+        if (!recvQueue->PopFront(&data))
+        {
+            printf("Could not get the message from the recv queue\n");
+            Sleep(1000);
+            continue;
+        }
+
+        char processId[MAX_PROCESS_ID_LENGTH];
+        strcpy_s(processId, data.processId);
+        
+        bool processConnected = processSockets->DoesKeyExist(processId);
+        if (!processConnected)
+        {
+            recvQueue->PushBack(data);
+            ReleaseSemaphore(*EmptyRecvQueue, 1, NULL);
+            continue;
+        }
+
+        SOCKET acceptedSocket;
+        processSockets->Get(processId, &acceptedSocket);
+
+        if (!SendDataToSocket(&acceptedSocket, &data))
+        {
+            printf("Failed to send message to the process\n");
+            recvQueue->PushBack(data);
+            ReleaseSemaphore(*EmptyRecvQueue, 1, NULL);
+            shutdown(acceptedSocket, SD_BOTH);
+            closesocket(acceptedSocket);
+            processSockets->Delete(processId);
+            continue;
+        }
+
+        if (recvQueue->Count() == 0)
+        {
+            continue;
+        }
+        ReleaseSemaphore(*EmptyRecvQueue, 1, NULL);
+    }
+
+    printf("SendMessageToProcess thread is shutting down\n");
     return 0;
 }

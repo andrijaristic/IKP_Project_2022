@@ -39,3 +39,10 @@ typedef struct REPLICATOR_RECEIVER_DATA {
 	HANDLE* EmptyRecvQueue;
 	HANDLE* FinishSignal;
 }REPLICATOR_RECEIVER_DATA;
+
+typedef struct PROCESS_SENDER_DATA {
+	HashMap<SOCKET>* processSockets;
+	LinkedList<MESSAGE>* recvQueue;
+	HANDLE* EmptyRecvQueue;
+	HANDLE* FinishSignal;
+}PROCESS_SENDER_DATA;
