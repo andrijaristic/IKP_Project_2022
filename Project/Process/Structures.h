@@ -10,3 +10,11 @@ typedef struct REPLICATOR_DATA{
 	sockaddr_in* serverAddress;
 	char processId[MAX_PROCESS_ID_LENGTH];
 } REPLICATOR_DATA;
+
+
+typedef struct REPLICATOR_SEND_DATA {
+	HANDLE* FinishSignal;
+	SOCKET* replicatorSocket;
+	char processId[MAX_PROCESS_ID_LENGTH];
+	bool* shutdownSignal;
+} REPLICATOR_SEND_DATA;
