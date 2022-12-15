@@ -15,7 +15,7 @@ bool IsSocketBroken(SOCKET socket)
     return false;
 }
 
-bool isSocketReady(SOCKET* socket)
+bool isSocketReadyForWriting(SOCKET* socket)
 {
     FD_SET set;
     timeval timeVal;
@@ -36,6 +36,31 @@ bool isSocketReady(SOCKET* socket)
         return false;
     }
 
+    if (iResult == 0)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool isSocketReadyForReading(SOCKET* socket) {
+    FD_SET set;
+    timeval timeVal;
+
+    FD_ZERO(&set);
+    FD_SET(*socket, &set);
+    timeVal.tv_sec = 0;
+    timeVal.tv_usec = 0;
+
+    int iResult;
+
+    iResult = select(0, &set, NULL, NULL, &timeVal);
+    if (iResult == SOCKET_ERROR)
+    {
+        fprintf(stderr, "select failed with error: %ld\n", WSAGetLastError());
+        return false;
+    }
     if (iResult == 0)
     {
         return false;
