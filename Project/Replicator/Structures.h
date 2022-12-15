@@ -46,3 +46,10 @@ typedef struct PROCESS_SENDER_DATA {
 	HANDLE* EmptyRecvQueue;
 	HANDLE* FinishSignal;
 }PROCESS_SENDER_DATA;
+
+typedef struct PROCESS_RECEIVER_DATA {
+	HashMap<SOCKET>* processSockets;
+	LinkedList<MESSAGE>* sendQueue;
+	HANDLE* EmptySendQueue;
+	HANDLE* FinishSignal;
+}PROCESS_RECEIVER_DATA;

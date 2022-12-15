@@ -45,6 +45,7 @@ public:
 	bool DoesKeyExist(const char* key);						//Checks if key exists in hash map
 	unsigned int Size();
 	char** GetKeys(int* keyCount);							//Returns all keys from hash map, stores number of keys in keyCount, returns NULL if empty
+	T* GetValues(int* valuesCount);
 };
 
 template <class T>
@@ -147,6 +148,8 @@ char** HashMap<T>::GetKeys(int* keysCount)
 		}
 	}
 
+	LeaveCriticalSection(&MapCS);
+
 	if (keysFound == 0)
 	{
 		if (keys != NULL)
@@ -161,6 +164,33 @@ char** HashMap<T>::GetKeys(int* keysCount)
 	}
 }
 
+
+// Function for getting values from hash map
+template <class T>
+T* HashMap<T>::GetValues(int* valuesCount)
+{
+	EnterCriticalSection(&MapCS);
+
+	int valuesFound = 0;
+	char** keys = GetKeys(&valuesFound);
+	if (keys == NULL)
+	{
+		LeaveCriticalSection(&MapCS);
+		*valuesCount = 0;
+		return NULL;
+	}
+
+	T* values = (T*)malloc(valuesFound * sizeof(T));
+	for (int i = 0; i < valuesFound; i++)
+	{
+		Get(keys[i], values + i);
+	}
+
+	LeaveCriticalSection(&MapCS);
+	free(keys);
+	*valuesCount = valuesFound;
+	return values;
+}
 
 //Function for checking if key exists in hash map
 template <class T>
