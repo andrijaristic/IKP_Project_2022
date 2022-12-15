@@ -184,6 +184,7 @@ T* HashMap<T>::GetValues(int* valuesCount)
 	for (int i = 0; i < valuesFound; i++)
 	{
 		Get(keys[i], values + i);
+		free(keys[i]);
 	}
 
 	LeaveCriticalSection(&MapCS);

@@ -608,6 +608,19 @@ DWORD WINAPI ReceiveMessageFromProcess(LPVOID param)
         
         if (sockets == NULL || keys==NULL || (socketCount != keyCount))
         {
+            if (keys != NULL)
+            {
+                for (int i = 0; i < keyCount; i++)
+                {
+                    free(keys[i]);
+                }
+                free(keys);
+            }
+            
+            if (sockets != NULL)
+            {
+                free(sockets);
+            }
             Sleep(1000);
             continue;
         }
@@ -649,6 +662,11 @@ DWORD WINAPI ReceiveMessageFromProcess(LPVOID param)
                 sendQueue->PushBack(*message);
                 ReleaseSemaphore(*EmptySendQueue, 1, NULL);
             }
+        }
+
+        for (int i = 0; i < keyCount; i++)
+        {
+            free(keys[i]);
         }
         free(keys);
         free(sockets);
