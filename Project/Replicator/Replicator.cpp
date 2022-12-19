@@ -395,7 +395,7 @@ DWORD WINAPI AcceptProcessConnections(LPVOID param)
             char processId[MAX_PROCESS_ID_LENGTH];
             strcpy_s(processId, message->processId);
 
-            bool processExists = processSockets->DoesKeyExist(processId);
+            bool processExists = processSockets->ContainsKey(processId);
 
             if (processExists)
             {
@@ -555,7 +555,7 @@ DWORD WINAPI SendMessageToProcess(LPVOID param)
         char processId[MAX_PROCESS_ID_LENGTH];
         strcpy_s(processId, data.processId);
 
-        bool processConnected = processSockets->DoesKeyExist(processId);
+        bool processConnected = processSockets->ContainsKey(processId);
         if (!processConnected)
         {
             recvQueue->PushBack(data);

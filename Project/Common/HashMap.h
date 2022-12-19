@@ -6,22 +6,22 @@
 #include <iostream>
 #include <cstdlib>
 #include <Windows.h>
-#define INITIAL_MAP_SIZE 50
+#define DEFAULT_SIZE 100
 using namespace std;
 
 template <class T>
-class HashMapNode
+class HashMapItem
 {
 private:
 	char* key;
 	T value;
-	HashMapNode* next;
+	HashMapItem* next;
 	template <class T> friend class HashMap;
 
 public:
-	HashMapNode(char* key, T value);		//ctor
-	HashMapNode();							//ctor
-	~HashMapNode();							//DTOR
+	HashMapItem(char* key, T value);		//Constructor
+	HashMapItem();							//Constructor
+	~HashMapItem();							//Destructor
 
 };
 
@@ -30,80 +30,76 @@ template <class T>
 class HashMap
 {
 private:
-	HashMapNode<T>* nodes;					//Nodes array
-	CRITICAL_SECTION MapCS;				//Mutex used for map access
-	unsigned int size;						//Hash map maximum unique key spots without chained nodes
-	unsigned int countUnique;				//Current number of unique key spots in use
-	long long GetHash(const char* str);		//Hash function for string hashing
+	HashMapItem<T>* items;					// Array of items that are stored in the map
+	CRITICAL_SECTION MapAccess;				// Critical secion for thread safety
+	unsigned int size;						// Array size (maximum number of unique keys in the map)
+	unsigned int count;						// Current number of items in the map
+	long long GetHash(const char* str);		// Hash function
 
 public:
-	HashMap(unsigned int size = INITIAL_MAP_SIZE);		//CTOR
-	~HashMap();											//DTOR
-	void Insert(const char* key, T value);					//Method for inserting a value in hash map, replaces existing one with the same key
-	void Delete(const char* key);								//Method for deleting a value in hash map, returns false if not found
-	bool Get(const char* key, T* value);						//Method for getting value by key, value is stored in value pointer, returns false if key doesn't exist
-	bool DoesKeyExist(const char* key);						//Checks if key exists in hash map
-	unsigned int Size();
-	char** GetKeys(int* keyCount);							//Returns all keys from hash map, stores number of keys in keyCount, returns NULL if empty
-	T* GetValues(int* valuesCount);
+	HashMap(unsigned int size = DEFAULT_SIZE);		//Constructor
+	~HashMap();											//Destructor
+	void Insert(const char* key, T value);					// Inserts value into map, if key exists, replaces the value
+	void Delete(const char* key);								// Deletes item with given key from map and returns true, if key doesnt exists returns false
+	bool Get(const char* key, T* value);						// Tries getting the value and stores it into value parameter, returs true if it succeeds, or false if key doesnt exist
+	bool ContainsKey(const char* key);						// Checks if given key exists in the map
+	char** GetKeys(int* keyCount);							// Returns all keys from hash map, to avoid memory leakage, memory for each key, as well as memory for array of keys must be freed
+	T* GetValues(int* valuesCount);						    // Returns all values from hash map, to avoid memory leakage memory for array of values must be freed
 };
 
 template <class T>
-HashMapNode<T>::HashMapNode(char* key, T value)
+HashMapItem<T>::HashMapItem(char* key, T value)
 {
-	this->key = (char*)malloc((strlen(key) + 3) * sizeof(char));
-	strcpy_s(this->key, strlen(key) + 1, key);
+	//this->key = (char*)malloc((strlen(key) + 3) * sizeof(char));
+	//strcpy_s(this->key, strlen(key) + 1, key);
+	this->key = _strdup(key);
 	this->value = value;
-	this->next = nullptr;
+	this->next = NULL;
 }
 
 template <class T>
-HashMapNode<T>::HashMapNode()
+HashMapItem<T>::HashMapItem()
 {
-	this->key = nullptr;
-	this->next = nullptr;
+	this->key = NULL;
+	this->next = NULL;
 }
 
 template <class T>
-HashMapNode<T>::~HashMapNode()
+HashMapItem<T>::~HashMapItem()
 {
-	if (this->key != nullptr)
+	if (this->key != NULL)
 		free(this->key);
-	if (this->next != nullptr)
-		delete (this->next);
+	if (this->next != NULL)
+		delete this->next;
 }
 
 
-// Constructor to initialize map
 template <class T>
 HashMap<T>::HashMap(unsigned int size)
 {
-	InitializeCriticalSection(&MapCS);
-	nodes = new HashMapNode<T>[size];
+	InitializeCriticalSection(&MapAccess);
+	items = new HashMapItem<T>[size];
 	for (int i = 0; i < (int)size; i++)
 	{
-		nodes[i].next = nullptr;
-		nodes[i].key = nullptr;
+		items[i].next = NULL;
+		items[i].key = NULL;
 	}
 
 	this->size = size;
-	countUnique = 0;
+	count = 0;
 }
 
-// Destructor
 template <class T>
 HashMap<T>::~HashMap()
 {
-	delete[] nodes;
-	DeleteCriticalSection(&MapCS);
+	delete[] items;
+	DeleteCriticalSection(&MapAccess);
 }
 
 
-//Function for string hashing, polynomial rolling hash
 template <class T>
 long long HashMap<T>::GetHash(const char* key)
 {
-	// P and M
 	int p = 53; // english alphabet upper and lowercase
 	int m = (int)(1e9 + 9); //very large number to prevent collision
 	long long powerOfP = 1;
@@ -116,66 +112,249 @@ long long HashMap<T>::GetHash(const char* key)
 	return hashVal;
 }
 
-// Function for getting hash map size
 template <class T>
-unsigned int HashMap<T>::Size()
+void HashMap<T>::Insert(const char* key, T value)
 {
-	return size;
+	unsigned long long hashValue = GetHash(key);
+
+	EnterCriticalSection(&MapAccess);
+	int index = hashValue % this->size;
+	if (items[index].key == NULL)
+	{
+		//items[index].key = (char*)malloc((strlen(key) + 3) * sizeof(char));
+		//strcpy_s(items[index].key, strlen(key) + 1, key);
+		items[index].key = _strdup(key);
+		items[index].value = value;
+		count++;
+		LeaveCriticalSection(&MapAccess);
+		return;
+	}
+
+	if (strcmp(items[index].key, key) == 0)
+	{
+		items[index].value = value;
+		LeaveCriticalSection(&MapAccess);
+		return;
+	}
+
+	HashMapItem<T>* node = items + index;
+	HashMapItem<T>* nodeNext = node->next;
+	while (nodeNext != NULL)
+	{
+		if (strcmp(nodeNext->key, key) == 0)
+		{
+			nodeNext->value = value;
+			LeaveCriticalSection(&MapAccess);
+			return;
+		}
+		node = node->next;
+		nodeNext = nodeNext->next;
+	}
+
+	char* keyCopy = _strdup(key);
+	HashMapItem<T>* newNode = new HashMapItem<T>(keyCopy, value);
+	node->next = newNode;
+	count++;
+	free(keyCopy);
+
+	LeaveCriticalSection(&MapAccess);
+	return;
 }
 
-// Function for getting keys from hash map
+template <class T>
+void HashMap<T>::Delete(const char* key)
+{
+	unsigned long long hashValue = GetHash(key);
+	EnterCriticalSection(&MapAccess);
+	if (count == 0)
+	{
+		LeaveCriticalSection(&MapAccess);
+		return;
+	}
+
+	unsigned int index = hashValue % this->size;
+	if (items[index].key == NULL)
+	{
+		LeaveCriticalSection(&MapAccess);
+		return;
+	}
+
+	HashMapItem<T>* node = items + index;
+
+	if (strcmp(node->key, key) != 0)
+	{
+		HashMapItem<T>* nodeNext = node->next;
+		while (nodeNext != NULL)
+		{
+			if (strcmp(nodeNext->key, key) == 0)
+			{
+				node->next = nodeNext->next;
+				nodeNext->next = NULL;
+				free(nodeNext->key);
+				nodeNext->key = NULL;
+				delete nodeNext;
+				count--;
+				break;
+			}
+
+			node = node->next;
+			nodeNext = nodeNext->next;
+		}
+		LeaveCriticalSection(&MapAccess);
+		return;
+	}
+
+	if (node->next == NULL)
+	{
+		free(node->key);
+		node->key = NULL;
+		count--;
+		LeaveCriticalSection(&MapAccess);
+		return;
+	}
+
+	HashMapItem<T>* nodeNext = node->next;
+	while (nodeNext->next != NULL)
+	{
+		node = node->next;
+		nodeNext = nodeNext->next;
+	}
+
+	node->next = NULL;
+	HashMapItem<T>* first = items + index;
+	first->value = nodeNext->value;
+	free(first->key);
+	//first->key = (char*)malloc((strlen(nodeNext->key) + 3) * sizeof(char));
+	//strcpy_s(first->key, strlen(nodeNext->key) + 1, nodeNext->key);
+	first->key = _strdup(key);
+
+	free(nodeNext->key);
+	nodeNext->key = NULL;
+	delete nodeNext;
+	count--;
+	LeaveCriticalSection(&MapAccess);
+	return;
+}
+
+template <class T>
+bool HashMap<T>::Get(const char* key, T* value)
+{
+	unsigned  long long hashValue = GetHash(key);
+
+	EnterCriticalSection(&MapAccess);
+	if (count == 0)
+	{
+		LeaveCriticalSection(&MapAccess);
+		return false;
+	}
+
+	unsigned int index = hashValue % this->size;
+	if (items[index].key == NULL)
+	{
+		LeaveCriticalSection(&MapAccess);
+		return false;
+	}
+
+	HashMapItem<T>* node = items + index;
+	while (node != NULL)
+	{
+		if (strcmp(node->key, key) == 0)
+		{
+			*value = node->value;
+			LeaveCriticalSection(&MapAccess);
+			return true;
+		}
+
+		node = node->next;
+	}
+
+	LeaveCriticalSection(&MapAccess);
+	return false;
+}
+
+template <class T>
+bool HashMap<T>::ContainsKey(const char* key)
+{
+	unsigned long long hashValue = GetHash(key);
+	EnterCriticalSection(&MapAccess);
+	if (count == 0)
+	{
+		LeaveCriticalSection(&MapAccess);
+		return false;
+	}
+
+	unsigned int index = hashValue % this->size;
+	if (items[index].key == NULL)
+	{
+		LeaveCriticalSection(&MapAccess);
+		return false;
+	}
+	
+	HashMapItem<T>* node = items + index;
+	while (node != NULL)
+	{
+		if (strcmp(node->key, key) == 0)
+		{
+			LeaveCriticalSection(&MapAccess);
+			return true;
+		}
+
+		node = node->next;
+	}
+
+	LeaveCriticalSection(&MapAccess);
+	return false;
+
+}
+
 template <class T>
 char** HashMap<T>::GetKeys(int* keysCount)
 {
-	EnterCriticalSection(&MapCS);
-	char** keys = (char**)malloc(size * sizeof(char*));
+	EnterCriticalSection(&MapAccess);
+	*keysCount = count;
+	if (*keysCount == 0)
+	{
+		LeaveCriticalSection(&MapAccess);
+		return NULL;
+	}
+	char** keys = (char**)malloc(count * sizeof(char*));
 	int keysFound = 0;
 
 	for (int i = 0; i < (int)size; i++)
 	{
-		if (nodes[i].key == nullptr)continue;
-		keys[keysFound] = (char*)malloc((strlen(nodes[i].key) + 3) * sizeof(char));
-		strcpy_s(keys[keysFound], strlen(nodes[i].key) + 1, nodes[i].key);
-		keysFound++;
-		HashMapNode<T>* node = (nodes + i)->next;
-		while (node != nullptr)
+		if (items[i].key == NULL)
 		{
-			keys[keysFound] = (char*)malloc((strlen(node->key) + 3) * sizeof(char));
-			strcpy_s(keys[keysFound], strlen(node->key) + 1, node->key);
+			continue;
+		}
+		//keys[keysFound] = (char*)malloc((strlen(items[i].key) + 3) * sizeof(char));
+		//strcpy_s(keys[keysFound], strlen(items[i].key) + 1, items[i].key);
+		keys[keysFound] = _strdup(items[i].key);
+		keysFound++;
+		HashMapItem<T>* node = items[i].next;
+		while (node != NULL)
+		{
+			//keys[keysFound] = (char*)malloc((strlen(node->key) + 3) * sizeof(char));
+			//strcpy_s(keys[keysFound], strlen(node->key) + 1, node->key);
+			keys[keysFound] = _strdup(node->key);
 			keysFound++;
-
 			node = node->next;
 		}
 	}
 
-	LeaveCriticalSection(&MapCS);
-
-	if (keysFound == 0)
-	{
-		if (keys != NULL)
-			free(keys);
-		*keysCount = 0;
-		return NULL;
-	}
-	else
-	{
-		*keysCount = keysFound;
-		return keys;
-	}
+	LeaveCriticalSection(&MapAccess);
+	return keys;
 }
 
-
-// Function for getting values from hash map
 template <class T>
 T* HashMap<T>::GetValues(int* valuesCount)
 {
-	EnterCriticalSection(&MapCS);
+	EnterCriticalSection(&MapAccess);
 
 	int valuesFound = 0;
 	char** keys = GetKeys(&valuesFound);
 	if (keys == NULL)
 	{
-		LeaveCriticalSection(&MapCS);
+		LeaveCriticalSection(&MapAccess);
 		*valuesCount = 0;
 		return NULL;
 	}
@@ -187,226 +366,9 @@ T* HashMap<T>::GetValues(int* valuesCount)
 		free(keys[i]);
 	}
 
-	LeaveCriticalSection(&MapCS);
+	LeaveCriticalSection(&MapAccess);
 	free(keys);
 	*valuesCount = valuesFound;
 	return values;
 }
-
-//Function for checking if key exists in hash map
-template <class T>
-bool HashMap<T>::DoesKeyExist(const char* key)
-{
-	unsigned long long hashValue = GetHash(key);
-	EnterCriticalSection(&MapCS);
-	if (countUnique == 0)
-	{
-		LeaveCriticalSection(&MapCS);
-		return false;
-	}
-
-	unsigned int index = hashValue % this->size;
-	if (nodes[index].key == nullptr)
-	{
-		LeaveCriticalSection(&MapCS);
-		return false;
-	}
-	else
-	{
-		HashMapNode<T>* node = nodes + index;
-		do
-		{
-			if (strcmp(node->key, key) == 0)
-			{
-				LeaveCriticalSection(&MapCS);
-				return true;
-			}
-
-			node = node->next;
-		} while (node != nullptr);
-	}
-
-	LeaveCriticalSection(&MapCS);
-	return false;
-
-}
-
-//Function for inserting into hash map, if value exists it will be replaced
-template <class T>
-void HashMap<T>::Insert(const char* key, T value)
-{
-	unsigned long long hashValue = GetHash(key);
-
-	EnterCriticalSection(&MapCS);
-	int index = hashValue % this->size;
-	if (nodes[index].key == nullptr) //If primary node is empty, place value and key there
-	{
-		nodes[index].key = (char*)malloc((strlen(key) + 3) * sizeof(char));
-		strcpy_s(nodes[index].key, strlen(key) + 1, key);
-		nodes[index].value = value;
-		countUnique++;
-		LeaveCriticalSection(&MapCS);
-
-		return;
-	}
-	else if (strcmp(nodes[index].key, key) == 0)//Rewrite primary node value
-	{
-		nodes[index].value = value;
-		LeaveCriticalSection(&MapCS);
-		return;
-	}
-	else //Collission happened, chain new element
-	{
-		HashMapNode<T>* node = nodes + index;
-		HashMapNode<T>* nodeNext = node->next;
-		while (true)
-		{
-			if (nodeNext != nullptr)
-			{
-				if (strcmp(nodeNext->key, key) == 0) //Replace existing
-				{
-					nodeNext->value = value;
-					LeaveCriticalSection(&MapCS);
-					return;
-				}
-
-			}
-			else
-			{
-				break;
-			}
-			node = node->next;
-			nodeNext = nodeNext->next;
-		}
-
-		//Add new
-		{
-			char* keyCopy = _strdup(key);
-			HashMapNode<T>* newNode = new HashMapNode<T>(keyCopy, value);
-			node->next = newNode;
-			countUnique++;
-			free(keyCopy);
-		}
-	}
-	LeaveCriticalSection(&MapCS);
-	return;
-}
-
-
-//Function for getting value from hash map
-template <class T>
-bool HashMap<T>::Get(const char* key, T* value)
-{
-	unsigned  long long hashValue = GetHash(key);
-
-	EnterCriticalSection(&MapCS);
-	if (countUnique == 0)
-	{
-		LeaveCriticalSection(&MapCS);
-		return false;
-	}
-
-	unsigned int index = hashValue % this->size;
-	if (nodes[index].key == nullptr)
-	{
-		LeaveCriticalSection(&MapCS);
-		return false;
-	}
-	else
-	{
-		HashMapNode<T>* node = nodes + index;
-		do
-		{
-			if (strcmp(node->key, key) == 0)
-			{
-				*value = node->value;
-				LeaveCriticalSection(&MapCS);
-				return true;
-			}
-
-			node = node->next;
-		} while (node != nullptr);
-	}
-
-	LeaveCriticalSection(&MapCS);
-	return false;
-}
-
-
-//Function to delete element from hash map
-template <class T>
-void HashMap<T>::Delete(const char* key)
-{
-	unsigned long long hashValue = GetHash(key);
-	EnterCriticalSection(&MapCS);
-	if (countUnique == 0)
-	{
-		LeaveCriticalSection(&MapCS);
-		return;
-	}
-
-	unsigned int index = hashValue % this->size;
-	if (nodes[index].key == nullptr)
-	{
-		LeaveCriticalSection(&MapCS);
-		return;
-	}
-
-	HashMapNode<T>* node = nodes + index;
-	if (strcmp(node->key, key) == 0 && node->next == nullptr) //if first element is to be deleted and there are no chained collisions just set it to null
-	{
-		free(node->key);
-		node->key = nullptr;
-		countUnique--;
-		LeaveCriticalSection(&MapCS);
-		return;
-	}
-	else if (strcmp(node->key, key) == 0 && node->next != nullptr)//if first element is to be deleted and there are chained collisions move last to it's spot
-	{
-		HashMapNode<T>* nodeNext = node->next;
-		while (nodeNext->next != nullptr)
-		{
-			node = node->next;
-			nodeNext = nodeNext->next;
-		}
-
-		node->next = nullptr; //Set previous to nullptr
-		HashMapNode<T>* first = nodes + index;
-		first->value = nodeNext->value; //Copy last's value to first
-		free(first->key);
-		first->key = (char*)malloc((strlen(nodeNext->key) + 3) * sizeof(char));
-		strcpy_s(first->key, strlen(nodeNext->key) + 1, nodeNext->key);//Store last's key in first's
-
-		nodeNext->next = nullptr;
-		free(nodeNext->key);
-		nodeNext->key = nullptr;
-		delete nodeNext; //delete last
-		countUnique--;
-		LeaveCriticalSection(&MapCS);
-		return;
-	}
-
-	HashMapNode<T>* nodeNext = node->next;
-	while (nodeNext != nullptr)
-	{
-		if (strcmp(nodeNext->key, key) == 0)
-		{
-			node->next = nodeNext->next;
-			nodeNext->next = nullptr;
-			free(nodeNext->key);
-			nodeNext->key = nullptr;
-			delete nodeNext;
-			countUnique--;
-			LeaveCriticalSection(&MapCS);
-			return;
-		}
-
-		node = node->next;
-		nodeNext = nodeNext->next;
-	}
-
-	LeaveCriticalSection(&MapCS);
-	return;
-}
-
 #endif
