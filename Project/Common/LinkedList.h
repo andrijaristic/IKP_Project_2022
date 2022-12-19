@@ -10,18 +10,15 @@ using namespace std;
 
 //class for linked list node
 template <class T>
-class ListNode
+class ListItem
 {
 private:
 	T value;
-	ListNode* next;
-	ListNode* previous;
+	ListItem* next;
+	ListItem* previous;
 
 public:
-	ListNode();
-	T GetValue();
-	ListNode* Next();
-	ListNode* Previous();
+	ListItem();
 
 	template <class T> friend class LinkedList;
 };
@@ -31,329 +28,193 @@ template <class T>
 class LinkedList
 {
 private:
-	CRITICAL_SECTION ListCS;			 //List mutex
-	ListNode<T>* head;			// List head
-	ListNode<T>* rear;			// List rear
-	int count;					// current size of the list
+	CRITICAL_SECTION ListAccess;			 // Critical secion for thread safety
+	ListItem<T>* head;			// List head
+	ListItem<T>* tail;			// List tail
+	int count;					// current number of elements in the list
 
 public:
-	LinkedList();											//CTOR
-	~LinkedList();											//DTOR
-	bool PushFront(T element);								//Add element to the front of the list, returns true if successfull
-	bool PushBack(T element);								//Add element to the rear of the list, returns true if successfull
-	ListNode<T>* AcquireIteratorNodeBack();					//returns back node pointer
-	ListNode<T>* AcquireIteratorNodeFront();				//returns front node pointer
-	bool PopFront(T* value);								//Gets element from the front of the list, returns true if list is not empty
-	bool PopBack(T* value);									//Gets element from the rear of the list, returns true if list is not empty
-	bool RemoveElement(ListNode<T>* node);					//Removes element stored in the node, returns false if not found
-	int Count();											//Get list elements count
-	bool isEmpty();											//Check if empty
+	LinkedList();											// Constructor
+	~LinkedList();											// Destructor
+	bool PushFront(T element);								// Adds element to the front of the list, returns true if succeeds
+	bool PushBack(T element);								// Adds element to the back of the list, returns true if succeeds
+	bool PopFront(T* value);								// Gets element from the front of the list, returns true if succeeds or false if list is empty
+	bool PopBack(T* value);									// Gets element from the back of the list, returns true if succeeds or false if list is empty
+	int Count();											// Get list elements count
+	bool isEmpty();											// Check if empty
 };
 
-// Constructor to initialize list node
 template <class T>
-ListNode<T>::ListNode()
+ListItem<T>::ListItem()
 {
-	this->next = nullptr;
-	this->previous = nullptr;
+	this->next = NULL;
+	this->previous = NULL;
 }
 
-
-// Function to get value
-template <class T>
-T ListNode<T>::GetValue()
-{
-	return value;
-}
-
-
-template <class T>
-ListNode<T>* ListNode<T>::Next()
-{
-	return next;
-}
-
-template <class T>
-ListNode<T>* ListNode<T>::Previous()
-{
-	return previous;
-}
-
-// Constructor to initialize list
 template <class T>
 LinkedList<T>::LinkedList()
 {
-	head = nullptr;
+	head = NULL;
 	count = 0;
-	rear = head;
-	InitializeCriticalSection(&ListCS);
+	tail = head;
+	InitializeCriticalSection(&ListAccess);
 
 }
 
-// Constructor to initialize list
 template <class T>
 LinkedList<T>::~LinkedList()
 {
-	ListNode<T>* pointer = head;
-	if (pointer != nullptr)
+	ListItem<T>* temp = head;
+	if (temp != NULL)
 	{
-		ListNode<T>* pointerNext = head->next;
-		while (pointerNext != nullptr)
+		ListItem<T>* tempNext = head->next;
+		while (tempNext != NULL)
 		{
-			delete pointer;
-			pointer = pointerNext;
-			pointerNext = pointerNext->next;
+			delete temp;
+			temp = tempNext;
+			tempNext = tempNext->next;
 		}
-		delete pointer;
-
-
+		delete temp;
 	}
-
-	DeleteCriticalSection(&ListCS);
-
-
+	DeleteCriticalSection(&ListAccess);
 }
 
 
 
-// Utility function to check if the list is empty
 template <class T>
 bool LinkedList<T>::isEmpty()
 {
-	return Count() == 0;
+	return count == 0;
 }
 
-
-// Utility function to return list elements count
 template <class T>
 int LinkedList<T>::Count()
 {
 	return count;
 }
 
-// Utility function to push new elemnt to the front of the list
 template <class T>
 bool LinkedList<T>::PushFront(T element)
 {
-	EnterCriticalSection(&ListCS);
+	EnterCriticalSection(&ListAccess);
 
 	if (count == 0)
 	{
-		ListNode<T>* newNode = new ListNode<T>();
-		newNode->value = element;
-		newNode->previous = nullptr;
-		newNode->next = nullptr;
-		head = newNode;
-		rear = newNode;
+		ListItem<T>* newItem = new ListItem<T>();
+		newItem->value = element;
+		newItem->previous = NULL;
+		newItem->next = NULL;
+		head = newItem;
+		tail = newItem;
 		count++;
-		LeaveCriticalSection(&ListCS);
+		LeaveCriticalSection(&ListAccess);
 		return true;
 	}
-	ListNode<T>* newNode = new ListNode<T>();
-	newNode->value = element;
-	newNode->previous = nullptr;
-	newNode->next = head;
-	head->previous = newNode;
-	head = newNode;
+
+	ListItem<T>* newItem = new ListItem<T>();
+	newItem->value = element;
+	newItem->previous = NULL;
+	newItem->next = head;
+	head->previous = newItem;
+	head = newItem;
 	count++;
-	LeaveCriticalSection(&ListCS);
+	LeaveCriticalSection(&ListAccess);
 	return true;
 }
 
-// Utility function to push new elemnt to the back of the list
 template <class T>
 bool LinkedList<T>::PushBack(T element)
 {
-	EnterCriticalSection(&ListCS);
+	EnterCriticalSection(&ListAccess);
 
 	if (count == 0)
 	{
-		ListNode<T>* newNode = new ListNode<T>();
-		newNode->value = element;
-		newNode->previous = nullptr;
-		newNode->next = nullptr;
-		head = newNode;
-		rear = newNode;
+		ListItem<T>* newItem = new ListItem<T>();
+		newItem->value = element;
+		newItem->previous = NULL;
+		newItem->next = NULL;
+		head = newItem;
+		tail = newItem;
 		count++;
-		LeaveCriticalSection(&ListCS);
+		LeaveCriticalSection(&ListAccess);
 		return true;
 	}
-	ListNode<T>* newNode = new ListNode<T>();
-	newNode->value = element;
-	newNode->previous = rear;
-	newNode->next = nullptr;
-	rear->next = newNode;
-	rear = newNode;
+
+	ListItem<T>* newItem = new ListItem<T>();
+	newItem->value = element;
+	newItem->previous = tail;
+	newItem->next = NULL;
+	tail->next = newItem;
+	tail = newItem;
 	count++;
-	LeaveCriticalSection(&ListCS);
+	LeaveCriticalSection(&ListAccess);
 	return true;
 }
 
-// Utility function to pop element from the front of the list
 template <class T>
 bool LinkedList<T>::PopFront(T* value)
 {
-	EnterCriticalSection(&ListCS);
+	EnterCriticalSection(&ListAccess);
+
 	if (count == 0)
 	{
-		LeaveCriticalSection(&ListCS);
+		LeaveCriticalSection(&ListAccess);
 		return false;
 	}
-	ListNode<T>* frontNode = head;
-	*value = frontNode->value;
+
+	ListItem<T>* item = head;
+	*value = item->value;
+
 	if (count == 1)
 	{
-		head = nullptr;
-		rear = nullptr;
+		head = NULL;
+		tail = NULL;
 	}
 	else
 	{
-		head = frontNode->next;
-		head->previous = nullptr;
+		head = item->next;
+		head->previous = NULL;
 	}
-	frontNode->next = nullptr;
-	frontNode->previous = nullptr;
-	delete frontNode;
+
+	item->next = NULL;
+	item->previous = NULL;
+	delete item;
 	count--;
-	LeaveCriticalSection(&ListCS);
+	LeaveCriticalSection(&ListAccess);
 	return true;
 }
 
-// Utility function to pop element from the back of the list
 template <class T>
 bool LinkedList<T>::PopBack(T* value)
 {
-	EnterCriticalSection(&ListCS);
+	EnterCriticalSection(&ListAccess);
+
 	if (count == 0)
 	{
-		LeaveCriticalSection(&ListCS);
+		LeaveCriticalSection(&ListAccess);
 		return false;
 	}
-	ListNode<T>* backNode = rear;
-	*value = backNode->value;
+
+	ListItem<T>* item = tail;
+	*value = item->value;
+
 	if (count == 1)
 	{
-		head = nullptr;
-		rear = nullptr;
+		head = NULL;
+		tail = NULL;
 	}
 	else
 	{
-		rear = backNode->previous;
-		rear->next = nullptr;
+		tail = item->previous;
+		tail->next = NULL;
 	}
-	backNode->next = nullptr;
-	backNode->previous = nullptr;
-	delete backNode;
+
+	item->next = NULL;
+	item->previous = NULL;
+	delete item;
 	count--;
-	LeaveCriticalSection(&ListCS);
+	LeaveCriticalSection(&ListAccess);
 	return true;
 }
-
-// Utility function to remove list element
-template <class T>
-bool LinkedList<T>::RemoveElement(ListNode<T>* node)
-{
-	EnterCriticalSection(&ListCS);
-	if (count == 0)
-	{
-		LeaveCriticalSection(&ListCS);
-		return false;
-	}
-	ListNode<T>* search = head;
-
-	for (int i = 0; i < count; i++)
-	{
-		if (search == node && i == 0) //Remove head
-		{
-			if (count == 1)//There is only one element in list
-			{
-				head = nullptr;
-				rear = nullptr;
-				delete search;
-				count--;
-				break;
-			}
-			else
-			{
-				head = search->next;
-				(search->next)->previous = nullptr;
-				search->next = nullptr;
-				search->previous = nullptr;
-				delete search;
-				count--;
-				break;
-			}
-		}
-		else if (search == node && i == count - 1)//Delete rear element
-		{
-			if (count == 1)//There is only one element in list
-			{
-				head = nullptr;
-				rear = nullptr;
-				search->next = nullptr;
-				search->previous = nullptr;
-				delete search;
-				count--;
-				break;
-			}
-			else
-			{
-				rear = search->previous;
-				(search->previous)->next = nullptr;
-				search->next = nullptr;
-				search->previous = nullptr;
-				delete search;
-				count--;
-				break;
-			}
-		}
-		else if (search == node) //Delete arbitrary node
-		{
-			(search->previous)->next = search->next;
-			(search->next)->previous = search->previous;
-			search->next = nullptr;
-			search->previous = nullptr;
-			delete search;
-			count--;
-			break;
-		}
-
-		search = search->next;
-	}
-	LeaveCriticalSection(&ListCS);
-	return false;
-}
-
-// Utility function to acquire iterator to rear, 0 is placed in result if acquisition failed
-template <class T>
-ListNode<T>* LinkedList<T>::AcquireIteratorNodeBack()
-{
-	EnterCriticalSection(&ListCS);
-	if (rear != nullptr)
-	{
-
-		LeaveCriticalSection(&ListCS);
-		return rear;
-	}
-
-	LeaveCriticalSection(&ListCS);
-	return nullptr;
-}
-
-// Utility function to acquire iterator to front, 0 is placed in result if acquisition failed
-template <class T>
-ListNode<T>* LinkedList<T>::AcquireIteratorNodeFront()
-{
-	EnterCriticalSection(&ListCS);
-	if (head != nullptr)
-	{
-		LeaveCriticalSection(&ListCS);
-		return head;
-	}
-
-	LeaveCriticalSection(&ListCS);
-	return nullptr;
-}
-
 #endif
 
