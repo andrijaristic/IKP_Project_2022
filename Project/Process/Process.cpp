@@ -65,7 +65,7 @@ int main()
     // Making socket for process to replicator connection.
     replicatorSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (replicatorSocket == INVALID_SOCKET) {
-        printf("\033[0;31msocket failed with error: %ld\033[0m\n", WSAGetLastError());
+        printf("socket failed with error: %ld\n", WSAGetLastError());
         WSACleanup();
         return 1;
     }
@@ -155,9 +155,9 @@ DWORD WINAPI SendMessageToReplicator(LPVOID param) {
     while (WaitForSingleObject(*FinishSignal, 0) != WAIT_OBJECT_0) {
         // Check for shutdownSignal so there's no lingering gets_s() running while cleanup is happening for smoother UX
         if (!*shutdownSignal){
-            if (!*replicatorConnected && !*registrationSuccessful) {
-                continue;
-            }
+            //if (!*replicatorConnected && !*registrationSuccessful) {
+            //    continue;
+            //}
 
             printf("MESSAGE: ");
             gets_s(message, DEFAULT_BUFFER_LENGTH);
@@ -229,7 +229,7 @@ DWORD WINAPI ReceiveMessageFromReplicator(LPVOID param) {
         }
         else { // recv success
             MESSAGE* message = (MESSAGE*)recvBuf;
-            printf("\n\033[0;32m\tRECEIVED: \033[0m");
+            printf("\n\tRECEIVED: ");
             printf("%s\nMESSAGE: ", message->message);
         }
     }
@@ -277,7 +277,7 @@ DWORD WINAPI ConnectToReplicator(LPVOID param) {
 
         *replicatorSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (*replicatorSocket == INVALID_SOCKET) {
-            printf("\033[0;31msocket failed with error: %ld\033[0m\n", WSAGetLastError());
+            printf("socket failed with error: %ld\n", WSAGetLastError());
             WSACleanup();
             return 1;
         }
@@ -293,7 +293,7 @@ DWORD WINAPI ConnectToReplicator(LPVOID param) {
         unsigned long int nonBlockingMode = 1;
         iResult = ioctlsocket(*replicatorSocket, FIONBIO, &nonBlockingMode);
         if (iResult == SOCKET_ERROR) {
-            printf("\033[0;31mioctlsocket failed with error: %ld\033[0m\n", WSAGetLastError());
+            printf("ioctlsocket failed with error: %ld\n", WSAGetLastError());
             return 1;
         }
 

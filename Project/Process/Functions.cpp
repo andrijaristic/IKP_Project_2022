@@ -33,7 +33,7 @@ bool IsSocketReadyForWriting(SOCKET* socket)
 
     if (iResult == SOCKET_ERROR)
     {
-        fprintf(stderr, "\tWRITE\033[0;31m select failed with error: %ld \033[0m\n", WSAGetLastError());
+        fprintf(stderr, "\tWRITE select failed with error: %ld\n", WSAGetLastError());
         return false;
     }
 
@@ -62,7 +62,7 @@ bool IsSocketReadyForReading(SOCKET* socket, bool* connected) {
     }
     if (iResult == SOCKET_ERROR && *connected)
     {
-        fprintf(stderr, "\tREAD\033[0;31m select failed with error: %ld \033[0m\n", WSAGetLastError());
+        fprintf(stderr, "\tREAD select failed with error: %ld\n", WSAGetLastError());
         return false;
     }
     if (iResult == 0)
