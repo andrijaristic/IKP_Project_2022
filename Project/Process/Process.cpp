@@ -81,7 +81,7 @@ int main()
     replicatorData.FinishSignal = &FinishSignal;
     replicatorData.replicatorConnected = &replicatorConnected;
     replicatorData.registrationSuccessful = &registrationSuccessful;
-    strcpy_s(replicatorData.processId, processId);
+    replicatorData.processId = processId;
 
     replicatorConnection = CreateThread(NULL, 0, &ConnectToReplicator, (LPVOID)&replicatorData, 0, &replicatorConnectionThreadId);
 
@@ -256,8 +256,9 @@ DWORD WINAPI ConnectToReplicator(LPVOID param) {
     bool* replicatorConnected = replicatorData.replicatorConnected;
     bool* registrationSuccessful = replicatorData.registrationSuccessful;
     sockaddr_in* serverAddress = replicatorData.serverAddress;
-    char processId[MAX_PROCESS_ID_LENGTH];
-    strcpy_s(processId, replicatorData.processId);
+    //char processId[MAX_PROCESS_ID_LENGTH];
+    //strcpy_s(processId, replicatorData.processId);
+    char* processId = replicatorData.processId;
 
     int iResult;
     while (WaitForSingleObject(*FinishSignal, 0) != WAIT_OBJECT_0) {
@@ -310,6 +311,7 @@ DWORD WINAPI ConnectToReplicator(LPVOID param) {
 
         iResult = send(*replicatorSocket, (char*)&data, sizeof(data), 0);
         if (iResult == SOCKET_ERROR) {
+            shutdown(*replicatorSocket, SD_BOTH);
             closesocket(*replicatorSocket);
             WSACleanup();
         }
@@ -349,15 +351,22 @@ DWORD WINAPI ConnectToReplicator(LPVOID param) {
                 // Close socket
                 shutdown(*replicatorSocket, SD_BOTH);
                 closesocket(*replicatorSocket);
-                WSACleanup();
 
-                printf("\nRegistration failed. Press Enter to exit.\n");
-                getchar();
+                printf("\nRegistration failed. Connection to Replicator broken.\n");
+                *replicatorConnected = false;
+
+                do {
+                    printf("Enter New ProcessID: ");
+                    gets_s(processId, MAX_PROCESS_ID_LENGTH);
+                } while (atoi(processId) <= 0);
+
+            }
+            else {
+                replicatorData.processId = processId;
+                printf("Registration successful.\n\n");
+                *registrationSuccessful = true;
             }
         }
-
-        printf("Registration successful.\n\n");
-        *registrationSuccessful = true;
     }
 
     printf("ConnectToReplicator Thread is shutting down.\n");

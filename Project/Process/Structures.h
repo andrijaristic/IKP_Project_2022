@@ -9,7 +9,7 @@ typedef struct REPLICATOR_DATA{
 	bool* replicatorConnected;
 	bool* registrationSuccessful;
 	sockaddr_in* serverAddress;
-	char processId[MAX_PROCESS_ID_LENGTH];
+	char* processId;
 } REPLICATOR_DATA;
 
 typedef struct REPLICATOR_SEND_DATA {
