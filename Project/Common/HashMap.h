@@ -50,8 +50,6 @@ public:
 template <class T>
 HashMapItem<T>::HashMapItem(char* key, T value)
 {
-	//this->key = (char*)malloc((strlen(key) + 3) * sizeof(char));
-	//strcpy_s(this->key, strlen(key) + 1, key);
 	this->key = _strdup(key);
 	this->value = value;
 	this->next = NULL;
@@ -101,7 +99,7 @@ template <class T>
 long long HashMap<T>::GetHash(const char* key)
 {
 	int p = 53; // english alphabet upper and lowercase
-	int m = (int)(1e9 + 9); //very large number to prevent collision
+	int m = (int)(1e9 + 9); //very large number
 	long long powerOfP = 1;
 	long long hashVal = 0;
 	for (int i = 0; i < (int)strlen(key); i++)
@@ -121,8 +119,6 @@ void HashMap<T>::Insert(const char* key, T value)
 	int index = hashValue % this->size;
 	if (items[index].key == NULL)
 	{
-		//items[index].key = (char*)malloc((strlen(key) + 3) * sizeof(char));
-		//strcpy_s(items[index].key, strlen(key) + 1, key);
 		items[index].key = _strdup(key);
 		items[index].value = value;
 		count++;
@@ -224,8 +220,6 @@ void HashMap<T>::Delete(const char* key)
 	HashMapItem<T>* first = items + index;
 	first->value = nodeNext->value;
 	free(first->key);
-	//first->key = (char*)malloc((strlen(nodeNext->key) + 3) * sizeof(char));
-	//strcpy_s(first->key, strlen(nodeNext->key) + 1, nodeNext->key);
 	first->key = _strdup(key);
 
 	free(nodeNext->key);
@@ -326,15 +320,11 @@ char** HashMap<T>::GetKeys(int* keysCount)
 		{
 			continue;
 		}
-		//keys[keysFound] = (char*)malloc((strlen(items[i].key) + 3) * sizeof(char));
-		//strcpy_s(keys[keysFound], strlen(items[i].key) + 1, items[i].key);
 		keys[keysFound] = _strdup(items[i].key);
 		keysFound++;
 		HashMapItem<T>* node = items[i].next;
 		while (node != NULL)
 		{
-			//keys[keysFound] = (char*)malloc((strlen(node->key) + 3) * sizeof(char));
-			//strcpy_s(keys[keysFound], strlen(node->key) + 1, node->key);
 			keys[keysFound] = _strdup(node->key);
 			keysFound++;
 			node = node->next;
