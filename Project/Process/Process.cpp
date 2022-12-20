@@ -155,10 +155,6 @@ DWORD WINAPI SendMessageToReplicator(LPVOID param) {
     while (WaitForSingleObject(*FinishSignal, 0) != WAIT_OBJECT_0) {
         // Check for shutdownSignal so there's no lingering gets_s() running while cleanup is happening for smoother UX
         if (!*shutdownSignal){
-            //if (!*replicatorConnected && !*registrationSuccessful) {
-            //    continue;
-            //}
-
             printf("MESSAGE: ");
             gets_s(message, DEFAULT_BUFFER_LENGTH);
 
@@ -180,6 +176,9 @@ DWORD WINAPI SendMessageToReplicator(LPVOID param) {
                     shutdown(*replicatorSocket, SD_BOTH);
                     closesocket(*replicatorSocket);
                 }
+            }
+            else if (!*shutdownSignal && !*replicatorConnected) {
+                printf("\nNot connected to replicator.\n");
             }
         }
     }
@@ -229,7 +228,7 @@ DWORD WINAPI ReceiveMessageFromReplicator(LPVOID param) {
         }
         else { // recv success
             MESSAGE* message = (MESSAGE*)recvBuf;
-            printf("\n\tRECEIVED: ");
+            printf("\nRECEIVED: ");
             printf("%s\nMESSAGE: ", message->message);
         }
     }
