@@ -561,7 +561,7 @@ DWORD WINAPI SendMessageToProcess(LPVOID param)
         MESSAGE data;
         if (!recvQueue->PopFront(&data))
         {
-            printf("Could not get the message from the recv queue\n");
+            //printf("Could not get the message from the recv queue\n");
             Sleep(1000);
             continue;
         }
