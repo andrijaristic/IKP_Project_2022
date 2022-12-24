@@ -42,6 +42,7 @@ typedef struct REPLICATOR_RECEIVER_DATA {
 
 typedef struct PROCESS_SENDER_DATA {
 	HashMap<SOCKET>* processSockets;
+	HashMap<bool>* finishedProcesses;
 	LinkedList<MESSAGE>* recvQueue;
 	HANDLE* EmptyRecvQueue;
 	HANDLE* FinishSignal;
@@ -49,6 +50,7 @@ typedef struct PROCESS_SENDER_DATA {
 
 typedef struct PROCESS_RECEIVER_DATA {
 	HashMap<SOCKET>* processSockets;
+	HashMap<bool>* finishedProcesses;
 	LinkedList<MESSAGE>* sendQueue;
 	HANDLE* EmptySendQueue;
 	HANDLE* FinishSignal;

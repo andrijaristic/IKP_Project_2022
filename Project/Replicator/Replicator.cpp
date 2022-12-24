@@ -90,6 +90,7 @@ int main()
     DWORD processConnectionThreadId;
     HANDLE processConnection;
     HashMap<SOCKET> processSockets;
+    HashMap<bool> finishedProcesses;
 
     if (!InitializeListenSocket(&processListenSocket, isMainReplicator ? MAIN_REPLICATOR_PROCESS_PORT : SECONDARY_REPLICATOR_PROCESS_PORT))
     {
@@ -139,6 +140,7 @@ int main()
 
     PROCESS_SENDER_DATA processSenderData;
     processSenderData.processSockets = &processSockets;
+    processSenderData.finishedProcesses = &finishedProcesses;
     processSenderData.recvQueue = &recvQueue;
     processSenderData.EmptyRecvQueue = &EmptyRecvQueue;
     processSenderData.FinishSignal = &FinishSignal;
@@ -150,6 +152,7 @@ int main()
 
     PROCESS_RECEIVER_DATA processReceiverData;
     processReceiverData.processSockets = &processSockets;
+    processReceiverData.finishedProcesses = &finishedProcesses;
     processReceiverData.sendQueue = &sendQueue;
     processReceiverData.EmptySendQueue = &EmptySendQueue;
     processReceiverData.FinishSignal = &FinishSignal;
@@ -549,6 +552,7 @@ DWORD WINAPI SendMessageToProcess(LPVOID param)
 {
     PROCESS_SENDER_DATA processSendData = *((PROCESS_SENDER_DATA*)param);
     HashMap<SOCKET>* processSockets = processSendData.processSockets;
+    HashMap<bool>* finishedProcesses = processSendData.finishedProcesses;
     LinkedList<MESSAGE>* recvQueue = processSendData.recvQueue;
     HANDLE* EmptyRecvQueue = processSendData.EmptyRecvQueue;
     HANDLE* FinishSignal = processSendData.FinishSignal;
@@ -587,6 +591,7 @@ DWORD WINAPI SendMessageToProcess(LPVOID param)
             ReleaseSemaphore(*EmptyRecvQueue, 1, NULL);
             shutdown(acceptedSocket, SD_BOTH);
             closesocket(acceptedSocket);
+            finishedProcesses->Delete(processId);
             processSockets->Delete(processId);
             continue;
         }
@@ -607,6 +612,7 @@ DWORD WINAPI ReceiveMessageFromProcess(LPVOID param)
 {
     PROCESS_RECEIVER_DATA processRecvData = *((PROCESS_RECEIVER_DATA*)param);
     HashMap<SOCKET>* processSockets = processRecvData.processSockets;
+    HashMap<bool>* finishedProcesses = processRecvData.finishedProcesses;
     LinkedList<MESSAGE>* sendQueue = processRecvData.sendQueue;
     HANDLE* EmptySendQueue = processRecvData.EmptySendQueue;
     HANDLE* FinishSignal = processRecvData.FinishSignal;
@@ -644,6 +650,10 @@ DWORD WINAPI ReceiveMessageFromProcess(LPVOID param)
         {
             if (!SocketIsReadyForReading(sockets + i))
             {
+                if (finishedProcesses->ContainsKey(keys[i]))
+                {
+                    continue;
+                }
                 Sleep(50);
                 continue;
             }
@@ -659,6 +669,7 @@ DWORD WINAPI ReceiveMessageFromProcess(LPVOID param)
                     closesocket(sockets[i]);
                     // find socket and remove it from hashmap
                     processSockets->Delete(keys[i]);
+                    finishedProcesses->Delete(keys[i]);
                 }
                 else if (iResult == SOCKET_ERROR)
                 {
@@ -672,6 +683,7 @@ DWORD WINAPI ReceiveMessageFromProcess(LPVOID param)
                     closesocket(sockets[i]);
                     // find socket and remove it from hashmap
                     processSockets->Delete(keys[i]);
+                    finishedProcesses->Delete(keys[i]);
                     break;
                 }
                 else
@@ -683,6 +695,11 @@ DWORD WINAPI ReceiveMessageFromProcess(LPVOID param)
                     }
                     // message received
                     MESSAGE* message = (MESSAGE*)recvBuffer;
+                    if (message->flag == STRESS_TEST_DONE)
+                    {
+                        finishedProcesses->Insert(keys[i], true);
+                        break;
+                    }
                     if (message->flag != DATA)
                     {
                         break;
