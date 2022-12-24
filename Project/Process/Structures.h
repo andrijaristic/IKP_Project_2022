@@ -27,4 +27,5 @@ typedef struct REPLICATOR_RECEIVE_DATA {
 	char processId[MAX_PROCESS_ID_LENGTH];
 	bool* replicatorConnected;
 	bool* registrationSuccessful;
+	bool stressTest;
 } REPLICATOR_RECEIVE_DATA;
