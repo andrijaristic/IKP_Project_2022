@@ -334,10 +334,15 @@ DWORD WINAPI StressTestNoTimeout(LPVOID param) {
             //closesocket(*replicatorSocket);
 
             //*shutdownSignal = true;
-            shutdown(*replicatorSocket, SD_SEND);
+            MESSAGE data;
+            data.flag = STRESS_TEST_DONE;
+            strcpy_s(data.message, "");
+            SendDataToReplicator(replicatorSocket, &data);
+
             printf("\nPRESS ENTER TO EXIT\n");
             getchar();
 
+            shutdown(*replicatorSocket, SD_BOTH);
             closesocket(*replicatorSocket);
             *shutdownSignal = true;
         }
