@@ -22,7 +22,7 @@
 #define THREAD_NUMBER 3
 #define DEFAULT_BUFFER_LENGTH 1024
 #define MAX_PROCESS_ID_LENGTH 16
-#define STRESS_TEST_MESSAGE_AMOUNT 1000
+#define STRESS_TEST_MESSAGE_AMOUNT 1000000
 
 bool InitializeWindowsSockets();
 DWORD WINAPI ConnectToReplicator(LPVOID param);
@@ -341,27 +341,42 @@ DWORD WINAPI ReceiveMessageFromReplicator(LPVOID param) {
         }
 
         memset(recvBuf, 0, sizeof(recvBuf));
-        iResult = recv(*replicatorSocket, recvBuf, sizeof(MESSAGE), 0);
-        if (iResult == 0) {
-            printf("Connection with Replicator closed.\n");
-            shutdown(*replicatorSocket, SD_BOTH);
-            closesocket(*replicatorSocket);
-        }
-        else if (iResult == SOCKET_ERROR) { // recv failure
-            shutdown(*replicatorSocket, SD_BOTH);
-            closesocket(*replicatorSocket);
-        }
-        else { // recv success
-            if (stressTest) {
-                MESSAGE* message = (MESSAGE*)recvBuf;
-                printf("RECEIVED: %s\n", message->message);
+        int bytesReceived = 0;
+        while (bytesReceived != sizeof(MESSAGE))
+        {
+            iResult = recv(*replicatorSocket, recvBuf + bytesReceived, sizeof(MESSAGE) - bytesReceived, 0);
+            if (iResult == 0) {
+                printf("Connection with Replicator closed.\n");
+                shutdown(*replicatorSocket, SD_BOTH);
+                closesocket(*replicatorSocket);
             }
-            else {
-                MESSAGE* message = (MESSAGE*)recvBuf;
-                printf("\nRECEIVED: ");
-                printf("%s\nMESSAGE: ", message->message);
+            else if (iResult == SOCKET_ERROR) { // recv failure
+                if (WSAGetLastError() == WSAEWOULDBLOCK)
+                {
+                    continue;
+                }
+                shutdown(*replicatorSocket, SD_BOTH);
+                closesocket(*replicatorSocket);
+                break;
+            }
+            else { // recv success
+                bytesReceived += iResult;
+                if (bytesReceived != sizeof(MESSAGE))
+                {
+                    continue;
+                }
+                if (stressTest) {
+                    MESSAGE* message = (MESSAGE*)recvBuf;
+                    printf("RECEIVED: %s\n", message->message);
+                }
+                else {
+                    MESSAGE* message = (MESSAGE*)recvBuf;
+                    printf("\nRECEIVED: ");
+                    printf("%s\nMESSAGE: ", message->message);
+                }
             }
         }
+        
     }
 
     printf("ReceiveMessageFromReplicator Thread is shutting down.\n");

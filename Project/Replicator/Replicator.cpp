@@ -437,7 +437,7 @@ DWORD WINAPI SendMessageToReplicator(LPVOID param)
         MESSAGE data;
         if (!sendQueue->PopFront(&data))
         {
-            printf("Could not get the message from the send queue\n");
+            //printf("Could not get the message from the send queue\n");
             Sleep(1000);
             continue;
         }
@@ -456,7 +456,6 @@ DWORD WINAPI SendMessageToReplicator(LPVOID param)
             continue;
         }
         ReleaseSemaphore(*EmptySendQueue, 1, NULL);
-        Sleep(100);
     }
 
     printf("SendMessageToReplicator thread is shutting down\n");
@@ -498,34 +497,48 @@ DWORD WINAPI ReceiveMessageFromReplicator(LPVOID param)
         }
 
         memset(recvBuffer, 0, sizeof(recvBuffer));
-        iResult = recv(*replicatorSocket, recvBuffer, sizeof(MESSAGE), 0);
-        if (iResult == 0)
+        int bytesReceived = 0;
+        while (bytesReceived != sizeof(MESSAGE))
         {
-            printf("Connection with replicator closed\n");
-            shutdown(*replicatorSocket, SD_BOTH);
-            closesocket(*replicatorSocket);
-            *replicatorConnected = false;
-        }
-        else if (iResult == SOCKET_ERROR)
-        {
-            //recv failed
-            printf("recv failed with error %d\n", WSAGetLastError());
-            shutdown(*replicatorSocket, SD_BOTH);
-            closesocket(*replicatorSocket);
-            *replicatorConnected = false;
-        }
-        else
-        {
-            // message received
-            MESSAGE* message = (MESSAGE*)recvBuffer;
-            if (message->flag != DATA)
+            iResult = recv(*replicatorSocket, recvBuffer + bytesReceived, sizeof(MESSAGE) - bytesReceived, 0);
+            if (iResult == 0)
             {
-                continue;
+                printf("Connection with replicator closed\n");
+                shutdown(*replicatorSocket, SD_BOTH);
+                closesocket(*replicatorSocket);
+                *replicatorConnected = false;
             }
-            recvQueue->PushBack(*message);
-            ReleaseSemaphore(*EmptyRecvQueue, 1, NULL);
+            else if (iResult == SOCKET_ERROR)
+            {
+                if (WSAGetLastError() == WSAEWOULDBLOCK)
+                {
+                    continue;
+                }
+                //recv failed
+                printf("recv failed with error %d\n", WSAGetLastError());
+                shutdown(*replicatorSocket, SD_BOTH);
+                closesocket(*replicatorSocket);
+                *replicatorConnected = false;
+                break;
+            }
+            else
+            {
+                bytesReceived += iResult;
+                if (bytesReceived != sizeof(MESSAGE))
+                {
+                    continue;
+                }
+                // message received
+                MESSAGE* message = (MESSAGE*)recvBuffer;
+                if (message->flag != DATA)
+                {
+                    continue;
+                }
+                recvQueue->PushBack(*message);
+                ReleaseSemaphore(*EmptyRecvQueue, 1, NULL);
+            }
         }
-        Sleep(100);
+        
     }
 
     printf("ReceiveMessageFromReplicator thread is shutting down\n");
@@ -560,7 +573,7 @@ DWORD WINAPI SendMessageToProcess(LPVOID param)
         {
             recvQueue->PushBack(data);
             ReleaseSemaphore(*EmptyRecvQueue, 1, NULL);
-            Sleep(100);
+            Sleep(50);
             continue;
         }
 
@@ -580,11 +593,9 @@ DWORD WINAPI SendMessageToProcess(LPVOID param)
 
         if (recvQueue->Count() == 0)
         {
-            Sleep(100);
             continue;
         }
         ReleaseSemaphore(*EmptyRecvQueue, 1, NULL);
-        Sleep(100);
     }
 
     printf("SendMessageToProcess thread is shutting down\n");
@@ -633,38 +644,52 @@ DWORD WINAPI ReceiveMessageFromProcess(LPVOID param)
         {
             if (!SocketIsReadyForReading(sockets + i))
             {
+                Sleep(50);
                 continue;
             }
-
+            int bytesReceived = 0;
             memset(recvBuffer, 0, sizeof(recvBuffer));
-            iResult = recv(sockets[i], recvBuffer, sizeof(MESSAGE), 0);
-            if (iResult == 0)
+            while (bytesReceived != sizeof(MESSAGE))
             {
-                printf("Connection with process closed\n");
-                shutdown(sockets[i], SD_BOTH);
-                closesocket(sockets[i]);
-                // find socket and remove it from hashmap
-                processSockets->Delete(keys[i]);
-            }
-            else if (iResult == SOCKET_ERROR)
-            {
-                //recv failed
-                printf("recv failed with error %d\n", WSAGetLastError());
-                shutdown(sockets[i], SD_BOTH);
-                closesocket(sockets[i]);
-                // find socket and remove it from hashmap
-                processSockets->Delete(keys[i]);
-            }
-            else
-            {
-                // message received
-                MESSAGE* message = (MESSAGE*)recvBuffer;
-                if (message->flag != DATA)
+                iResult = recv(sockets[i], recvBuffer + bytesReceived, sizeof(MESSAGE) - bytesReceived, 0);
+                if (iResult == 0)
                 {
-                    continue;
+                    printf("Connection with process closed\n");
+                    shutdown(sockets[i], SD_BOTH);
+                    closesocket(sockets[i]);
+                    // find socket and remove it from hashmap
+                    processSockets->Delete(keys[i]);
                 }
-                sendQueue->PushBack(*message);
-                ReleaseSemaphore(*EmptySendQueue, 1, NULL);
+                else if (iResult == SOCKET_ERROR)
+                {
+                    if (WSAGetLastError() == WSAEWOULDBLOCK)
+                    {
+                        continue;
+                    }
+                    //recv failed
+                    printf("recv failed with error %d\n", WSAGetLastError());
+                    shutdown(sockets[i], SD_BOTH);
+                    closesocket(sockets[i]);
+                    // find socket and remove it from hashmap
+                    processSockets->Delete(keys[i]);
+                    break;
+                }
+                else
+                {
+                    bytesReceived += iResult;
+                    if (bytesReceived != sizeof(MESSAGE))
+                    {
+                        continue;
+                    }
+                    // message received
+                    MESSAGE* message = (MESSAGE*)recvBuffer;
+                    if (message->flag != DATA)
+                    {
+                        continue;
+                    }
+                    sendQueue->PushBack(*message);
+                    ReleaseSemaphore(*EmptySendQueue, 1, NULL);
+                }
             }
         }
 
@@ -674,7 +699,6 @@ DWORD WINAPI ReceiveMessageFromProcess(LPVOID param)
         }
         free(keys);
         free(sockets);
-        Sleep(100);
     }
 
     printf("ReceiveMessageFromProcess thread is shutting down\n");

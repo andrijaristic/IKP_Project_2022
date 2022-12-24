@@ -173,8 +173,29 @@ bool SendDataToSocket(SOCKET* socket, MESSAGE* data)
         }
         Sleep(50);
     }
-
-    int iResult = send(*socket, (char*)data, sizeof(*data), 0);
+    int bytesSent = 0;
+    int iResult = 0;
+    while (bytesSent != sizeof(MESSAGE))
+    {
+        iResult = send(*socket, (char*)data + bytesSent, sizeof(*data) - bytesSent, 0);
+        if (iResult == SOCKET_ERROR)
+        {
+            if (WSAGetLastError() == WSAEWOULDBLOCK)
+            {
+                continue;
+            }
+            return false;
+        }
+        else
+        {
+            bytesSent += iResult;
+            if (bytesSent != sizeof(MESSAGE))
+            {
+                continue;
+            }
+            return true;
+        }
+    }
 
     return iResult != SOCKET_ERROR;
 }
