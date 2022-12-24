@@ -532,7 +532,7 @@ DWORD WINAPI ReceiveMessageFromReplicator(LPVOID param)
                 MESSAGE* message = (MESSAGE*)recvBuffer;
                 if (message->flag != DATA)
                 {
-                    continue;
+                    break;
                 }
                 recvQueue->PushBack(*message);
                 ReleaseSemaphore(*EmptyRecvQueue, 1, NULL);
@@ -685,7 +685,7 @@ DWORD WINAPI ReceiveMessageFromProcess(LPVOID param)
                     MESSAGE* message = (MESSAGE*)recvBuffer;
                     if (message->flag != DATA)
                     {
-                        continue;
+                        break;
                     }
                     sendQueue->PushBack(*message);
                     ReleaseSemaphore(*EmptySendQueue, 1, NULL);
