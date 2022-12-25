@@ -29,8 +29,7 @@ DWORD WINAPI ConnectToReplicator(LPVOID param);
 DWORD WINAPI SendMessageToReplicator(LPVOID param);
 DWORD WINAPI ReceiveMessageFromReplicator(LPVOID param);
 void StressTestConnectToReplicator(LPVOID param);
-DWORD WINAPI StressTestTimeout(LPVOID param);
-DWORD WINAPI StressTestNoTimeout(LPVOID param);
+DWORD WINAPI StressTestSendMessage(LPVOID param);
 
 int main()
 {
@@ -126,27 +125,27 @@ int main()
     DWORD senderThreadId;
     HANDLE senderThread;
 
-    REPLICATOR_SEND_DATA replicatorSendData;
-    replicatorSendData.FinishSignal = &FinishSignal;
-    replicatorSendData.replicatorSocket = &replicatorSocket;
-    replicatorSendData.shutdownSignal = &shutdownSignal;
-    replicatorSendData.replicatorConnected = &replicatorConnected;
-    replicatorSendData.registrationSuccessful = &registrationSuccessful;
-    strcpy_s(replicatorSendData.processId, processId);
+    if (workMode != 1) {
+        REPLICATOR_STRESS_TEST_SEND_DATA replicatorStressTestSendData;
+        replicatorStressTestSendData.FinishSignal = &FinishSignal;
+        replicatorStressTestSendData.replicatorSocket = &replicatorSocket;
+        replicatorStressTestSendData.shutdownSignal = &shutdownSignal;
+        replicatorStressTestSendData.replicatorConnected = &replicatorConnected;
+        replicatorStressTestSendData.timeout = workMode == 2 ? true : false;
+        strcpy_s(replicatorStressTestSendData.processId, processId);
 
-    switch (workMode) {
-        case 1:
-            senderThread = CreateThread(NULL, 0, &SendMessageToReplicator, (LPVOID)&replicatorSendData, 0, &senderThreadId);
-            break;
-        case 2:
-            senderThread = CreateThread(NULL, 0, &StressTestTimeout, (LPVOID)&replicatorSendData, 0, &senderThreadId);
-            break;
-        case 3:
-            senderThread = CreateThread(NULL, 0, &StressTestNoTimeout, (LPVOID)&replicatorSendData, 0, &senderThreadId);
-            break;
-        default:
-            senderThread = CreateThread(NULL, 0, &SendMessageToReplicator, (LPVOID)&replicatorSendData, 0, &senderThreadId);
-            break;
+        senderThread = CreateThread(NULL, 0, &StressTestSendMessage, (LPVOID)&replicatorStressTestSendData, 0, &senderThreadId);
+    }
+    else {
+        REPLICATOR_SEND_DATA replicatorSendData;
+        replicatorSendData.FinishSignal = &FinishSignal;
+        replicatorSendData.replicatorSocket = &replicatorSocket;
+        replicatorSendData.shutdownSignal = &shutdownSignal;
+        replicatorSendData.replicatorConnected = &replicatorConnected;
+        replicatorSendData.registrationSuccessful = &registrationSuccessful;
+        strcpy_s(replicatorSendData.processId, processId);
+
+        senderThread = CreateThread(NULL, 0, &SendMessageToReplicator, (LPVOID)&replicatorSendData, 0, &senderThreadId);
     }
 
     while (!shutdownSignal) {
@@ -295,45 +294,63 @@ void StressTestConnectToReplicator(LPVOID param) {
     }
 }
 
-DWORD WINAPI StressTestNoTimeout(LPVOID param) {
-    REPLICATOR_SEND_DATA replicatorSendData = *((REPLICATOR_SEND_DATA*)param);
-    HANDLE* FinishSignal = replicatorSendData.FinishSignal;
-    SOCKET* replicatorSocket = replicatorSendData.replicatorSocket;
-    bool* shutdownSignal = replicatorSendData.shutdownSignal;
-    bool* replicatorConnected = replicatorSendData.replicatorConnected;
-    bool* registrationSuccessful = replicatorSendData.registrationSuccessful;
+DWORD WINAPI StressTestSendMessage (LPVOID param) {
+    REPLICATOR_STRESS_TEST_SEND_DATA stressTestData = *((REPLICATOR_STRESS_TEST_SEND_DATA*)param);
+    HANDLE* FinishSignal = stressTestData.FinishSignal;
+    SOCKET* replicatorSocket = stressTestData.replicatorSocket;
+    bool* shutdownSignal = stressTestData.shutdownSignal;
+    bool* replicatorConnected = stressTestData.replicatorConnected;
+    bool timeout = stressTestData.timeout;
     char processId[MAX_PROCESS_ID_LENGTH];
-    strcpy_s(processId, replicatorSendData.processId);
+    strcpy_s(processId, stressTestData.processId);
 
     printf("ONCE SENDING IS DONE, PRESS ENTER TO EXIT\n\n");
     while (WaitForSingleObject(*FinishSignal, 0) != WAIT_OBJECT_0) {
         // Check for shutdownSignal so there's no lingering gets_s() running while cleanup is happening for smoother UX
         if (!*shutdownSignal){
-            for (int i = 0; i < STRESS_TEST_MESSAGE_AMOUNT; i++) {
-                if (!*shutdownSignal && *replicatorConnected) {
-                    MESSAGE data;
-                    data.flag = DATA;
-                    snprintf(data.message, sizeof(data.message), "%d", i);
-                    strcpy_s(data.processId, processId);
+            if (timeout) { // Timeout Stress Test
+                for (int i = 0; i < STRESS_TEST_MESSAGE_AMOUNT; i++) {
+                    if (!*shutdownSignal && *replicatorConnected) {
+                        MESSAGE data;
+                        data.flag = DATA;
+                        snprintf(data.message, sizeof(data.message), "%d", i);
+                        strcpy_s(data.processId, processId);
 
-                    if (!SendDataToReplicator(replicatorSocket, &data)) {
-                        printf("Failed to send data to replicator.");
-                        shutdown(*replicatorSocket, SD_BOTH);
-                        closesocket(*replicatorSocket);
+                        if (!SendDataToReplicator(replicatorSocket, &data)) {
+                            printf("Failed to send data to replicator.");
+                            shutdown(*replicatorSocket, SD_BOTH);
+                            closesocket(*replicatorSocket);
+                        }
+                        printf("%d  ", i);
                     }
-                    printf("%d  ", i);
-                }
-                else if (!*shutdownSignal && !*replicatorConnected) {
-                    printf("\nNot connected to replicator.\n");
+                    else if (!*shutdownSignal && !*replicatorConnected) {
+                        printf("\nNot connected to replicator.\n");
+                    }
+
+                    Sleep(100);
                 }
             }
-            //printf("\nPRESS ENTER TO EXIT\n");
-            //getchar();
+            else {  // No Timeout Stress Test
+                for (int i = 0; i < STRESS_TEST_MESSAGE_AMOUNT; i++) {
+                    if (!*shutdownSignal && *replicatorConnected) {
+                        MESSAGE data;
+                        data.flag = DATA;
+                        snprintf(data.message, sizeof(data.message), "%d", i);
+                        strcpy_s(data.processId, processId);
 
-            //shutdown(*replicatorSocket, SD_BOTH);
-            //closesocket(*replicatorSocket);
+                        if (!SendDataToReplicator(replicatorSocket, &data)) {
+                            printf("Failed to send data to replicator.");
+                            shutdown(*replicatorSocket, SD_BOTH);
+                            closesocket(*replicatorSocket);
+                        }
+                        printf("%d  ", i);
+                    }
+                    else if (!*shutdownSignal && !*replicatorConnected) {
+                        printf("\nNot connected to replicator.\n");
+                    }
+                }
+            }
 
-            //*shutdownSignal = true;
             MESSAGE data;
             data.flag = STRESS_TEST_DONE;
             strcpy_s(data.message, "");
@@ -344,53 +361,6 @@ DWORD WINAPI StressTestNoTimeout(LPVOID param) {
 
             shutdown(*replicatorSocket, SD_BOTH);
             closesocket(*replicatorSocket);
-            *shutdownSignal = true;
-        }
-    }
-
-    printf("SendMessageToReplicator Thread is shutting down.\n");
-    return 0;
-}
-
-DWORD WINAPI StressTestTimeout(LPVOID param) {
-    REPLICATOR_SEND_DATA replicatorSendData = *((REPLICATOR_SEND_DATA*)param);
-    HANDLE* FinishSignal = replicatorSendData.FinishSignal;
-    SOCKET* replicatorSocket = replicatorSendData.replicatorSocket;
-    bool* shutdownSignal = replicatorSendData.shutdownSignal;
-    bool* replicatorConnected = replicatorSendData.replicatorConnected;
-    bool* registrationSuccessful = replicatorSendData.registrationSuccessful;
-    char processId[MAX_PROCESS_ID_LENGTH];
-    strcpy_s(processId, replicatorSendData.processId);
-
-    printf("ONCE SENDING IS DONE, PRESS ENTER TO EXIT\n\n");
-    while (WaitForSingleObject(*FinishSignal, 0) != WAIT_OBJECT_0) {
-        // Check for shutdownSignal so there's no lingering gets_s() running while cleanup is happening for smoother UX
-        if (!*shutdownSignal) {
-            for (int i = 0; i < STRESS_TEST_MESSAGE_AMOUNT; i++) {
-                if (!*shutdownSignal && *replicatorConnected) {
-                    MESSAGE data;
-                    data.flag = DATA;
-                    snprintf(data.message, sizeof(data.message), "%d", i);
-                    strcpy_s(data.processId, processId);
-
-                    if (!SendDataToReplicator(replicatorSocket, &data)) {
-                        printf("Failed to send data to replicator.");
-                        shutdown(*replicatorSocket, SD_BOTH);
-                        closesocket(*replicatorSocket);
-                    }
-                    printf("%d  ", i);
-                }
-                else if (!*shutdownSignal && !*replicatorConnected) {
-                    printf("\nNot connected to replicator.\n");
-                }
-                Sleep(100);
-            }
-            printf("\nPRESS ENTER TO EXIT\n");
-            getchar();
-
-            shutdown(*replicatorSocket, SD_BOTH);
-            closesocket(*replicatorSocket);
-
             *shutdownSignal = true;
         }
     }

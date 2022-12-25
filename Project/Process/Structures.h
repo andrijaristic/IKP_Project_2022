@@ -25,7 +25,16 @@ typedef struct REPLICATOR_RECEIVE_DATA {
 	HANDLE* FinishSignal;
 	SOCKET* replicatorSocket;
 	char processId[MAX_PROCESS_ID_LENGTH];
+	bool stressTest;
 	bool* replicatorConnected;
 	bool* registrationSuccessful;
-	bool stressTest;
 } REPLICATOR_RECEIVE_DATA;
+
+typedef struct REPLICATOR_STRESS_TEST_SEND_DATA {
+	HANDLE* FinishSignal;
+	SOCKET* replicatorSocket;
+	char processId[MAX_PROCESS_ID_LENGTH];
+	bool timeout;
+	bool* shutdownSignal;
+	bool* replicatorConnected;
+} REPLICATOR_STRESS_TEST_SEND_DATA;
