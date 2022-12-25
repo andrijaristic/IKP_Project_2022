@@ -510,6 +510,7 @@ DWORD WINAPI ReceiveMessageFromReplicator(LPVOID param)
                 shutdown(*replicatorSocket, SD_BOTH);
                 closesocket(*replicatorSocket);
                 *replicatorConnected = false;
+                break;
             }
             else if (iResult == SOCKET_ERROR)
             {
@@ -670,6 +671,7 @@ DWORD WINAPI ReceiveMessageFromProcess(LPVOID param)
                     // find socket and remove it from hashmap
                     processSockets->Delete(keys[i]);
                     finishedProcesses->Delete(keys[i]);
+                    break;
                 }
                 else if (iResult == SOCKET_ERROR)
                 {
